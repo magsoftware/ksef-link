@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -11,6 +13,15 @@ from ksef_link.shared.errors import KsefApiError
 
 REDACTED = "***REDACTED***"
 MAX_DEBUG_JSON_BYTES = 16_384
+DEFAULT_MAX_ATTEMPTS = 3
+DEFAULT_BASE_RETRY_DELAY = 0.5
+DEFAULT_MAX_RETRY_DELAY = 8.0
+RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+RETRYABLE_POST_PATHS = {
+    "/auth/challenge",
+    "/auth/token/refresh",
+    "/invoices/query/metadata",
+}
 SENSITIVE_KEYS = {
     "authorization",
     "token",
@@ -31,10 +42,20 @@ class KsefHttpClient:
         timeout: float,
         logger: logging.Logger,
         client: httpx.Client | None = None,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        base_retry_delay: float = DEFAULT_BASE_RETRY_DELAY,
+        max_retry_delay: float = DEFAULT_MAX_RETRY_DELAY,
+        sleep_fn: Callable[[float], None] | None = None,
     ) -> None:
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
         self._logger = logger
         self._owns_client = client is None
         self._client = client or httpx.Client(base_url=base_url, timeout=timeout)
+        self._max_attempts = max_attempts
+        self._base_retry_delay = base_retry_delay
+        self._max_retry_delay = max_retry_delay
+        self._sleep = sleep_fn or time.sleep
 
     def __enter__(self) -> KsefHttpClient:
         return self
@@ -69,24 +90,60 @@ class KsefHttpClient:
             body = json.dumps(json_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
 
-        self._log_request(method=method, path=path, headers=headers, body=body)
+        attempt = 1
+        while True:
+            self._log_request(method=method, path=path, headers=headers, body=body)
 
-        try:
-            response = self._client.request(method, path, headers=headers, content=body)
-        except httpx.HTTPError as error:
-            self._logger.debug("HTTP transport error: %s", error)
-            raise KsefApiError(f"Błąd połączenia z API KSeF: {error}") from error
+            try:
+                response = self._client.request(method, path, headers=headers, content=body)
+            except httpx.TransportError as error:
+                self._logger.debug("HTTP transport error: %s", error)
+                if self._should_retry_request(method=method, path=path, attempt=attempt):
+                    delay = self._retry_delay_seconds(attempt=attempt)
+                    self._logger.warning(
+                        "Retrying %s %s after transport error on attempt %s/%s in %.2fs",
+                        method,
+                        path,
+                        attempt,
+                        self._max_attempts,
+                        delay,
+                    )
+                    self._sleep(delay)
+                    attempt += 1
+                    continue
+                raise KsefApiError(f"Błąd połączenia z API KSeF: {error}") from error
 
-        self._log_response(response)
+            self._log_response(response)
 
-        if response.is_error:
-            self._raise_api_error(response)
+            if (
+                response.status_code in RETRYABLE_STATUS_CODES
+                and self._should_retry_request(method=method, path=path, attempt=attempt)
+            ):
+                delay = self._retry_delay_seconds(
+                    attempt=attempt,
+                    retry_after=_parse_retry_after_seconds(response.headers.get("Retry-After")),
+                )
+                self._logger.warning(
+                    "Retrying %s %s after HTTP %s on attempt %s/%s in %.2fs",
+                    method,
+                    path,
+                    response.status_code,
+                    attempt,
+                    self._max_attempts,
+                    delay,
+                )
+                self._sleep(delay)
+                attempt += 1
+                continue
 
-        return HttpResponse(
-            status_code=response.status_code,
-            body=response.content,
-            headers=dict(response.headers.items()),
-        )
+            if response.is_error:
+                self._raise_api_error(response)
+
+            return HttpResponse(
+                status_code=response.status_code,
+                body=response.content,
+                headers=dict(response.headers.items()),
+            )
 
     def request_json(
         self,
@@ -169,6 +226,30 @@ class KsefHttpClient:
             body=body,
         )
 
+    def _should_retry_request(self, *, method: str, path: str, attempt: int) -> bool:
+        if attempt >= self._max_attempts:
+            return False
+
+        normalized_method = method.upper()
+        if normalized_method == "GET":
+            return True
+        if normalized_method != "POST":
+            return False
+
+        normalized_path = path.split("?", 1)[0]
+        return normalized_path in RETRYABLE_POST_PATHS
+
+    def _retry_delay_seconds(self, *, attempt: int, retry_after: float | None = None) -> float:
+        exponential_delay: float = self._base_retry_delay * (2 ** (attempt - 1))
+        if exponential_delay > self._max_retry_delay:
+            exponential_delay = self._max_retry_delay
+        if retry_after is None:
+            return exponential_delay
+        delay = retry_after if retry_after > exponential_delay else exponential_delay
+        if delay > self._max_retry_delay:
+            return self._max_retry_delay
+        return delay
+
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     redacted_headers: dict[str, str] = {}
@@ -240,3 +321,13 @@ def _should_suppress_response_body(content_type: str, body: bytes) -> bool:
 def _looks_like_json(body: bytes) -> bool:
     preview = body.lstrip()[:1]
     return preview in {b"{", b"["}
+
+
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value.strip())
+    except ValueError:
+        return None
+    return max(parsed, 0.0)

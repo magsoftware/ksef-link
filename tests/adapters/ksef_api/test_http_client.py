@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 import httpx
 import pytest
@@ -9,19 +10,27 @@ from ksef_link.adapters.ksef_api.http_client import (
     KsefHttpClient,
     _format_debug_body,
     _format_response_debug_body,
+    _parse_retry_after_seconds,
     _redact_headers,
     _redact_json_value,
 )
 from ksef_link.shared.errors import KsefApiError
 
 
-def build_http_client(handler: httpx.MockTransport) -> KsefHttpClient:
+def build_http_client(
+    handler: httpx.MockTransport,
+    *,
+    sleep_fn: Callable[[float], None] | None = None,
+    max_attempts: int = 3,
+) -> KsefHttpClient:
     client = httpx.Client(base_url="https://api.ksef.mf.gov.pl/v2", timeout=30.0, transport=handler)
     return KsefHttpClient(
         base_url="https://api.ksef.mf.gov.pl/v2",
         timeout=30.0,
         logger=logging.getLogger("test-http"),
         client=client,
+        sleep_fn=sleep_fn,
+        max_attempts=max_attempts,
     )
 
 
@@ -124,6 +133,104 @@ def test_request_raises_api_error_for_transport_failure() -> None:
     assert "Błąd połączenia" in str(error.value)
 
 
+def test_request_retries_transport_error_for_get_and_then_succeeds() -> None:
+    calls = 0
+    sleep_calls: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("connect failed", request=request)
+        return httpx.Response(200, json={"ok": True})
+
+    http_client = build_http_client(httpx.MockTransport(handler), sleep_fn=sleep_calls.append)
+
+    payload = http_client.request_json("GET", "/auth/challenge")
+
+    assert payload == {"ok": True}
+    assert calls == 2
+    assert sleep_calls == [0.5]
+
+
+def test_request_retries_retryable_post_for_503_and_honors_retry_after() -> None:
+    calls = 0
+    sleep_calls: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503, json={"title": "Busy"}, headers={"Retry-After": "1.5"})
+        return httpx.Response(200, json={"challenge": "ok"})
+
+    http_client = build_http_client(httpx.MockTransport(handler), sleep_fn=sleep_calls.append)
+
+    payload = http_client.request_json("POST", "/auth/challenge", content=b"")
+
+    assert payload == {"challenge": "ok"}
+    assert calls == 2
+    assert sleep_calls == [1.5]
+
+
+def test_request_does_not_retry_non_retryable_post() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, json={"title": "Busy"})
+
+    http_client = build_http_client(httpx.MockTransport(handler))
+
+    with pytest.raises(KsefApiError) as error:
+        http_client.request("POST", "/auth/token/redeem", content=b"")
+
+    assert error.value.status_code == 503
+    assert calls == 1
+
+
+def test_request_does_not_retry_non_retryable_method() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, json={"title": "Busy"})
+
+    http_client = build_http_client(httpx.MockTransport(handler))
+
+    with pytest.raises(KsefApiError) as error:
+        http_client.request("PUT", "/auth/challenge", content=b"")
+
+    assert error.value.status_code == 503
+    assert calls == 1
+
+
+def test_http_client_rejects_invalid_max_attempts() -> None:
+    with pytest.raises(ValueError):
+        KsefHttpClient(
+            base_url="https://api.ksef.mf.gov.pl/v2",
+            timeout=30.0,
+            logger=logging.getLogger("test-http"),
+            max_attempts=0,
+        )
+
+
+def test_retry_delay_seconds_caps_exponential_and_retry_after_values() -> None:
+    http_client = KsefHttpClient(
+        base_url="https://api.ksef.mf.gov.pl/v2",
+        timeout=30.0,
+        logger=logging.getLogger("test-http"),
+        max_attempts=3,
+        base_retry_delay=5.0,
+        max_retry_delay=2.0,
+    )
+
+    assert http_client._retry_delay_seconds(attempt=2) == 2.0
+    assert http_client._retry_delay_seconds(attempt=1, retry_after=10.0) == 2.0
+
+
 def test_context_manager_closes_owned_client() -> None:
     http_client = KsefHttpClient(
         base_url="https://api.ksef.mf.gov.pl/v2",
@@ -185,3 +292,6 @@ def test_redaction_helpers_mask_sensitive_values() -> None:
     )
     assert _format_response_debug_body(b'{"token":"secret"}', "application/json").count("***REDACTED***") == 1
     assert _format_response_debug_body(b"<xml/>", None).startswith("<suppressed content-type=unknown")
+    assert _parse_retry_after_seconds("2.5") == 2.5
+    assert _parse_retry_after_seconds("bad") is None
+    assert _parse_retry_after_seconds(None) is None
