@@ -1,3 +1,5 @@
+"""Shared exception types used across the application."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -23,6 +25,15 @@ class KsefApiError(KsefLinkError):
         details: Any | None = None,
         body: Any | None = None,
     ) -> None:
+        """Initialize an API error enriched with optional diagnostics.
+
+        Args:
+            message: User-facing error message.
+            status_code: Optional HTTP status code.
+            error_code: Optional API-specific error code.
+            details: Optional structured details safe for user display.
+            body: Optional raw diagnostic payload intended for logs only.
+        """
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
@@ -30,7 +41,11 @@ class KsefApiError(KsefLinkError):
         self.body = body
 
     def to_payload(self) -> dict[str, Any]:
-        """Convert the error into a user-facing JSON payload."""
+        """Convert the error into a user-facing JSON payload.
+
+        Returns:
+            Safe payload for stderr or CLI consumers.
+        """
         return {
             "error": str(self),
             "statusCode": self.status_code,
@@ -39,7 +54,11 @@ class KsefApiError(KsefLinkError):
         }
 
     def to_log_payload(self) -> dict[str, Any]:
-        """Convert the error into a diagnostic payload for logs."""
+        """Convert the error into a diagnostic payload for logs.
+
+        Returns:
+            Extended payload including diagnostic body data.
+        """
         return {
             "error": str(self),
             "statusCode": self.status_code,

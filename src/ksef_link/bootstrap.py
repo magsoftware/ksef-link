@@ -1,3 +1,5 @@
+"""Application bootstrap helpers for assembling runtime dependencies."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
@@ -18,7 +20,16 @@ def build_application_context(
     environment: Mapping[str, str],
     logger: Logger,
 ) -> Iterator[ApplicationContext]:
-    """Build and manage the application context with all runtime adapters."""
+    """Build and manage the application context with all runtime adapters.
+
+    Args:
+        options: Parsed CLI options with runtime settings.
+        environment: Environment values visible to the application.
+        logger: Shared application logger.
+
+    Yields:
+        Fully wired application context for the current command execution.
+    """
     with KsefHttpClient(
         base_url=options.runtime.base_url,
         timeout=options.runtime.timeout,

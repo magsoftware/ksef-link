@@ -1,3 +1,5 @@
+"""Support components used by the KSeF authentication adapter."""
+
 from __future__ import annotations
 
 import base64
@@ -17,6 +19,8 @@ KSEF_TOKEN_ENCRYPTION_USAGE = "KsefTokenEncryption"
 
 
 class AuthenticationStatusCode(IntEnum):
+    """Authentication status codes returned by KSeF."""
+
     IN_PROGRESS = 100
     SUCCESS = 200
 
@@ -30,6 +34,18 @@ class CertificateSelector:
         *,
         now: datetime | None = None,
     ) -> PublicKeyCertificate:
+        """Select the newest active certificate for token encryption.
+
+        Args:
+            certificates: Certificates published by KSeF.
+            now: Optional current time override used mainly by tests.
+
+        Returns:
+            Best matching active certificate.
+
+        Raises:
+            KsefApiError: If no suitable active certificate is available.
+        """
         current_time = now or datetime.now(UTC)
         matching_certificates = [
             certificate
@@ -60,6 +76,19 @@ class TokenEncryptor:
         timestamp_ms: int,
         public_certificate_b64: str,
     ) -> str:
+        """Encrypt the raw KSeF token payload.
+
+        Args:
+            ksef_token: Raw KSeF token.
+            timestamp_ms: Challenge timestamp in milliseconds.
+            public_certificate_b64: Base64-encoded DER certificate.
+
+        Returns:
+            Base64-encoded ciphertext expected by KSeF.
+
+        Raises:
+            KsefApiError: If the certificate does not contain an RSA key.
+        """
         plaintext = f"{ksef_token}|{timestamp_ms}".encode()
         certificate_der = base64.b64decode(public_certificate_b64)
         certificate = x509.load_der_x509_certificate(certificate_der)
@@ -87,6 +116,12 @@ class AuthenticationPoller:
         sleep_fn: Callable[[float], None] | None = None,
         now_fn: Callable[[], float] | None = None,
     ) -> None:
+        """Initialize the poller.
+
+        Args:
+            sleep_fn: Optional sleep implementation used mainly by tests.
+            now_fn: Optional clock implementation used mainly by tests.
+        """
         self._sleep = sleep_fn or time.sleep
         self._now = now_fn or (lambda: datetime.now(UTC).timestamp())
 
@@ -99,6 +134,21 @@ class AuthenticationPoller:
         poll_interval: float,
         get_auth_status: Callable[[str, str, float], AuthStatus],
     ) -> AuthStatus:
+        """Poll authentication status until success, failure or timeout.
+
+        Args:
+            reference_number: Authentication reference number.
+            authentication_token: Temporary authentication token.
+            timeout_seconds: End-to-end timeout budget for polling.
+            poll_interval: Delay between polling attempts.
+            get_auth_status: Callback fetching the current auth status.
+
+        Returns:
+            Final successful authentication status.
+
+        Raises:
+            KsefApiError: If authentication fails or the timeout budget is exhausted.
+        """
         start = self._now()
         last_status: AuthStatus | None = None
 
@@ -145,6 +195,17 @@ class AuthenticationPoller:
 
 
 def _parse_datetime(value: str) -> datetime:
+    """Parse a KSeF datetime string into an aware ``datetime``.
+
+    Args:
+        value: Datetime string returned by KSeF.
+
+    Returns:
+        Parsed aware datetime.
+
+    Raises:
+        KsefApiError: If the value cannot be parsed.
+    """
     normalized = value.replace("Z", "+00:00")
     try:
         parsed = datetime.fromisoformat(normalized)

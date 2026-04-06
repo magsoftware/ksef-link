@@ -1,3 +1,5 @@
+"""Argument parser defining the public CLI for ksef-link."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,7 +22,11 @@ DEFAULT_INVOICE_PAGE_SIZE = 250
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the application CLI parser."""
+    """Build the application CLI parser.
+
+    Returns:
+        Fully configured top-level argument parser.
+    """
     parser = argparse.ArgumentParser(
         description="CLI for KSeF authentication and invoice operations.",
     )
@@ -183,7 +189,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_arguments(argv: Sequence[str] | None = None) -> CliOptions:
-    """Parse CLI arguments into typed command options."""
+    """Parse CLI arguments into typed command options.
+
+    Args:
+        argv: Optional list of CLI arguments.
+
+    Returns:
+        Parsed runtime options and command object.
+    """
     parser = build_parser()
     namespace = parser.parse_args(list(argv) if argv is not None else None)
 

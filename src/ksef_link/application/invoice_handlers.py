@@ -1,3 +1,5 @@
+"""Application handlers for invoice-related CLI commands."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -23,7 +25,18 @@ def handle_invoices_command(
     invoice_port: InvoicePort,
     invoice_storage: InvoiceStoragePort,
 ) -> dict[str, Any]:
-    """Run the invoices command use case."""
+    """Run the ``invoices`` command use case.
+
+    Args:
+        command: Typed CLI command options.
+        environment: Environment variables merged from the OS and dotenv file.
+        auth_port: Authentication port used to resolve access tokens.
+        invoice_port: Invoice port used to query and download invoices.
+        invoice_storage: Storage port used to persist downloaded XML files.
+
+    Returns:
+        User-facing payload with invoice metadata and optional download details.
+    """
     access_token = resolve_access_token(command, environment, auth_port)
     filters = build_invoice_filters(command)
     query_result = invoice_port.query_all_invoice_metadata(
@@ -51,7 +64,19 @@ def resolve_access_token(
     environment: Mapping[str, str],
     auth_port: AuthPort,
 ) -> str:
-    """Resolve access token from CLI args, refresh token or full authentication flow."""
+    """Resolve an access token for invoice operations.
+
+    Args:
+        command: Typed CLI command options.
+        environment: Environment variables merged from the OS and dotenv file.
+        auth_port: Authentication port used for refresh or full auth fallback.
+
+    Returns:
+        Access token used for invoice API calls.
+
+    Raises:
+        ConfigurationError: If no access path can be resolved.
+    """
     access_token = command.access_token or environment.get("KSEF_ACCESS_TOKEN") or environment.get("ACCESS_TOKEN")
     if access_token:
         return access_token
@@ -81,7 +106,18 @@ def resolve_auth_context(
     command: InvoicesCommandOptions,
     environment: Mapping[str, str],
 ) -> tuple[str, str]:
-    """Resolve KSeF context values from CLI args or environment."""
+    """Resolve KSeF context values from CLI args or environment.
+
+    Args:
+        command: Typed CLI command options.
+        environment: Environment variables merged from the OS and dotenv file.
+
+    Returns:
+        Tuple of ``(context_type, context_value)``.
+
+    Raises:
+        ConfigurationError: If context values are missing.
+    """
     context_type = command.context_type or environment.get("KSEF_CONTEXT_TYPE")
     context_value = command.context_value or environment.get("KSEF_CONTEXT_VALUE")
     if not context_type or not context_value:
@@ -93,7 +129,15 @@ def resolve_auth_context(
 
 
 def build_invoice_filters(command: InvoicesCommandOptions, now: datetime | None = None) -> InvoiceQueryFilters:
-    """Build KSeF invoice query filters."""
+    """Build typed KSeF invoice query filters.
+
+    Args:
+        command: Typed CLI command options.
+        now: Optional current time override used mainly by tests.
+
+    Returns:
+        Typed filter payload ready to be sent to the KSeF invoice API.
+    """
     date_from, date_to = current_month_range_warsaw(now)
     date_range: InvoiceDateRangeFilter = {
         "dateType": command.date_type,
@@ -119,7 +163,14 @@ def build_invoice_filters(command: InvoicesCommandOptions, now: datetime | None 
 
 
 def current_month_range_warsaw(now: datetime | None = None) -> tuple[str, str]:
-    """Return ISO-8601 range from the start of the current Warsaw month until now."""
+    """Return the default invoice date range for the current Warsaw month.
+
+    Args:
+        now: Optional current time override used mainly by tests.
+
+    Returns:
+        Tuple of ISO-8601 timestamps from the first day of the month until now.
+    """
     current_time = now.astimezone(WARSAW_TIMEZONE) if now is not None else datetime.now(WARSAW_TIMEZONE)
     month_start = current_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return month_start.isoformat(), current_time.isoformat()

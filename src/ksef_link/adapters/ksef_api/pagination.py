@@ -1,3 +1,5 @@
+"""Pagination helpers for KSeF invoice metadata queries."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -25,11 +27,26 @@ class InvoiceMetadataPaginator:
         filters: InvoiceQueryFilters,
         sort_order: str,
     ) -> None:
+        """Initialize the paginator.
+
+        Args:
+            fetch_page: Function used to fetch a page for given filters and offset.
+            filters: Initial invoice query filters.
+            sort_order: Requested API sort order.
+        """
         self._fetch_page = fetch_page
         self._filters = deepcopy(filters)
         self._sort_order = sort_order
 
     def collect_all(self) -> InvoiceQueryResult:
+        """Collect all invoice metadata pages into one aggregated result.
+
+        Returns:
+            Aggregated query result with deduplicated invoices.
+
+        Raises:
+            KsefApiError: If the API returns an invalid pagination combination.
+        """
         page_offset = 0
         pages_fetched = 0
         has_any_truncation = False
@@ -73,6 +90,14 @@ class InvoiceMetadataPaginator:
             page_offset += 1
 
     def _advance_truncated_date_range(self, response_invoices: list[dict[str, Any]]) -> None:
+        """Advance ``dateRange.from`` after a truncated response page.
+
+        Args:
+            response_invoices: Invoices returned by the truncated page.
+
+        Raises:
+            KsefApiError: If the page cannot be converted into a narrower range.
+        """
         date_type = self._filters["dateRange"]["dateType"]
         if self._sort_order != "Asc":
             raise KsefApiError("Automatyczna obsługa isTruncated działa tylko dla sortowania Asc.")
@@ -93,6 +118,17 @@ class InvoiceMetadataPaginator:
 
 
 def _invoice_date_field_name(date_type: str) -> str:
+    """Return the invoice field name matching a KSeF ``dateType``.
+
+    Args:
+        date_type: KSeF invoice date type.
+
+    Returns:
+        Invoice field name used in response items.
+
+    Raises:
+        ValueError: If the date type is not supported.
+    """
     try:
         return INVOICE_DATE_FIELDS[date_type]
     except KeyError as error:

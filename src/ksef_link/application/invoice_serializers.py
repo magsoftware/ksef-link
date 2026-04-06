@@ -1,3 +1,5 @@
+"""Serialization helpers for invoice command responses."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,6 +13,16 @@ def serialize_invoice_query_result(
     query_result: InvoiceQueryResult,
     downloads: list[dict[str, str | None]] | None = None,
 ) -> dict[str, Any]:
+    """Convert invoice query results into the CLI response payload.
+
+    Args:
+        filters: Typed filter payload sent to the invoice API.
+        query_result: Aggregated invoice query result.
+        downloads: Optional list of saved file metadata.
+
+    Returns:
+        JSON-serializable payload for stdout.
+    """
     payload: dict[str, Any] = {
         "filters": filters,
         "summary": {

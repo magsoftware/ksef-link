@@ -1,3 +1,5 @@
+"""Invoice-specific KSeF API adapter."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,6 +15,11 @@ class KsefInvoiceGateway:
     """KSeF invoice gateway adapter."""
 
     def __init__(self, http_client: KsefHttpClient) -> None:
+        """Initialize the invoice gateway.
+
+        Args:
+            http_client: Shared HTTP client used to talk to KSeF.
+        """
         self._http_client = http_client
 
     def query_invoice_metadata(
@@ -24,6 +31,18 @@ class KsefInvoiceGateway:
         page_offset: int,
         page_size: int,
     ) -> dict[str, Any]:
+        """Query one raw page of invoice metadata and return public payload shape.
+
+        Args:
+            access_token: Access token used for authorization.
+            filters: Typed invoice query filters.
+            sort_order: Requested API sort order.
+            page_offset: Zero-based page offset.
+            page_size: Maximum number of items per page.
+
+        Returns:
+            JSON-serializable payload representing one metadata page.
+        """
         page = self.query_invoice_metadata_page(
             access_token=access_token,
             filters=filters,
@@ -41,6 +60,17 @@ class KsefInvoiceGateway:
         sort_order: str,
         page_size: int,
     ) -> InvoiceQueryResult:
+        """Query all invoice metadata pages and aggregate the result.
+
+        Args:
+            access_token: Access token used for authorization.
+            filters: Typed invoice query filters.
+            sort_order: Requested API sort order.
+            page_size: Maximum number of items per page.
+
+        Returns:
+            Aggregated invoice query result.
+        """
         paginator = InvoiceMetadataPaginator(
             fetch_page=lambda current_filters, page_offset: self.query_invoice_metadata_page(
                 access_token=access_token,
@@ -55,6 +85,15 @@ class KsefInvoiceGateway:
         return paginator.collect_all()
 
     def download_invoice(self, *, access_token: str, ksef_number: str) -> InvoiceDownload:
+        """Download an invoice XML document into a temporary file.
+
+        Args:
+            access_token: Access token used for authorization.
+            ksef_number: Invoice identifier in KSeF.
+
+        Returns:
+            Download descriptor pointing to the staged XML file.
+        """
         response = self._http_client.request_stream_to_file(
             "GET",
             f"/invoices/ksef/{quote(ksef_number, safe='')}",
@@ -76,6 +115,18 @@ class KsefInvoiceGateway:
         page_offset: int,
         page_size: int,
     ) -> InvoiceMetadataPage:
+        """Query one invoice metadata page and convert it to a typed model.
+
+        Args:
+            access_token: Access token used for authorization.
+            filters: Typed invoice query filters.
+            sort_order: Requested API sort order.
+            page_offset: Zero-based page offset.
+            page_size: Maximum number of items per page.
+
+        Returns:
+            Typed invoice metadata page.
+        """
         query = urlencode(
             {
                 "sortOrder": sort_order,

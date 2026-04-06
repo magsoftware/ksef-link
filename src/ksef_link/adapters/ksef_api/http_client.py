@@ -1,3 +1,5 @@
+"""Low-level HTTP client with KSeF-specific logging and retry behavior."""
+
 from __future__ import annotations
 
 import json
@@ -50,6 +52,21 @@ class KsefHttpClient:
         max_retry_delay: float = DEFAULT_MAX_RETRY_DELAY,
         sleep_fn: Callable[[float], None] | None = None,
     ) -> None:
+        """Initialize the HTTP client wrapper.
+
+        Args:
+            base_url: Base URL of the KSeF API.
+            timeout: Default per-request timeout in seconds.
+            logger: Logger used for debug and retry messages.
+            client: Optional injected ``httpx.Client``.
+            max_attempts: Maximum number of attempts for retryable requests.
+            base_retry_delay: Base retry delay in seconds.
+            max_retry_delay: Maximum retry delay in seconds.
+            sleep_fn: Optional sleep implementation used mainly by tests.
+
+        Raises:
+            ValueError: If ``max_attempts`` is smaller than one.
+        """
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
         self._logger = logger
@@ -61,9 +78,15 @@ class KsefHttpClient:
         self._sleep = sleep_fn or time.sleep
 
     def __enter__(self) -> KsefHttpClient:
+        """Enter the context manager.
+
+        Returns:
+            The active HTTP client wrapper.
+        """
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Exit the context manager and close owned resources."""
         self.close()
 
     def close(self) -> None:
@@ -82,7 +105,23 @@ class KsefHttpClient:
         accept: str = "application/json",
         timeout: float | None = None,
     ) -> HttpResponse:
-        """Send an HTTP request and return the raw response."""
+        """Send an HTTP request and return the buffered response.
+
+        Args:
+            method: HTTP method.
+            path: Relative API path.
+            json_body: Optional JSON payload.
+            bearer_token: Optional bearer token.
+            content: Optional raw request body.
+            accept: Requested ``Accept`` header value.
+            timeout: Optional per-request timeout override.
+
+        Returns:
+            Buffered HTTP response.
+
+        Raises:
+            KsefApiError: If the request fails or the API returns an error.
+        """
         headers: dict[str, str] = {
             "Accept": accept,
         }
@@ -159,7 +198,19 @@ class KsefHttpClient:
         content: bytes | None = None,
         timeout: float | None = None,
     ) -> Any:
-        """Send an HTTP request and parse a JSON response body."""
+        """Send an HTTP request and parse a JSON response body.
+
+        Args:
+            method: HTTP method.
+            path: Relative API path.
+            json_body: Optional JSON payload.
+            bearer_token: Optional bearer token.
+            content: Optional raw request body.
+            timeout: Optional per-request timeout override.
+
+        Returns:
+            Parsed JSON payload, or ``None`` for an empty response body.
+        """
         response = self.request(
             method,
             path,
@@ -183,7 +234,22 @@ class KsefHttpClient:
         accept: str = "application/octet-stream",
         timeout: float | None = None,
     ) -> StreamedHttpResponse:
-        """Send an HTTP request and stream the response body into a temporary file."""
+        """Send an HTTP request and stream the response body into a temporary file.
+
+        Args:
+            method: HTTP method.
+            path: Relative API path.
+            bearer_token: Optional bearer token.
+            content: Optional raw request body.
+            accept: Requested ``Accept`` header value.
+            timeout: Optional per-request timeout override.
+
+        Returns:
+            Response metadata and the temporary file path with streamed content.
+
+        Raises:
+            KsefApiError: If the request fails or the API returns an error.
+        """
         headers: dict[str, str] = {
             "Accept": accept,
         }
@@ -266,6 +332,14 @@ class KsefHttpClient:
         headers: dict[str, str],
         body: bytes | None,
     ) -> None:
+        """Log an outgoing request with redacted headers and safe body preview.
+
+        Args:
+            method: HTTP method.
+            path: Relative API path.
+            headers: Request headers.
+            body: Optional raw request body.
+        """
         self._logger.debug("HTTP request: %s %s", method, f"{self._client.base_url}{path.lstrip('/')}")
         self._logger.debug("Request headers: %s", json.dumps(_redact_headers(headers), ensure_ascii=False))
         if body:
@@ -274,6 +348,11 @@ class KsefHttpClient:
         self._logger.debug("Request body: <empty>")
 
     def _log_response(self, response: httpx.Response) -> None:
+        """Log a received response using safe, redacted body formatting.
+
+        Args:
+            response: HTTP response object returned by ``httpx``.
+        """
         self._logger.debug("HTTP response status: %s", response.status_code)
         self._logger.debug(
             "Response headers: %s",
@@ -288,6 +367,14 @@ class KsefHttpClient:
         self._logger.debug("Response body: <empty>")
 
     def _raise_api_error(self, response: httpx.Response) -> None:
+        """Raise a typed application error from an HTTP response.
+
+        Args:
+            response: Error response returned by ``httpx``.
+
+        Raises:
+            KsefApiError: Always raised with parsed diagnostic data when available.
+        """
         body: Any
         try:
             body = response.json()
@@ -318,6 +405,16 @@ class KsefHttpClient:
         )
 
     def _should_retry_request(self, *, method: str, path: str, attempt: int) -> bool:
+        """Decide whether a request is retryable.
+
+        Args:
+            method: HTTP method.
+            path: Relative API path.
+            attempt: Current attempt number.
+
+        Returns:
+            ``True`` when the request should be retried.
+        """
         if attempt >= self._max_attempts:
             return False
 
@@ -331,6 +428,15 @@ class KsefHttpClient:
         return normalized_path in RETRYABLE_POST_PATHS
 
     def _retry_delay_seconds(self, *, attempt: int, retry_after: float | None = None) -> float:
+        """Compute the delay before the next retry attempt.
+
+        Args:
+            attempt: Current attempt number.
+            retry_after: Optional server-provided retry hint.
+
+        Returns:
+            Delay in seconds capped by the configured maximum.
+        """
         exponential_delay: float = self._base_retry_delay * (2 ** (attempt - 1))
         if exponential_delay > self._max_retry_delay:
             exponential_delay = self._max_retry_delay
@@ -342,6 +448,14 @@ class KsefHttpClient:
         return delay
 
     def _stream_response_to_temp_file(self, response: httpx.Response) -> tuple[Path, int]:
+        """Write a streamed response body into a temporary file.
+
+        Args:
+            response: Streaming HTTP response object.
+
+        Returns:
+            Tuple of ``(file_path, bytes_written)``.
+        """
         file_descriptor, file_name = tempfile.mkstemp(prefix="ksef-link-", suffix=".xml")
         os.close(file_descriptor)
         target_path = Path(file_name)
@@ -358,6 +472,14 @@ class KsefHttpClient:
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Redact sensitive values in HTTP headers.
+
+    Args:
+        headers: Raw header mapping.
+
+    Returns:
+        Header mapping with sensitive values redacted.
+    """
     redacted_headers: dict[str, str] = {}
     for key, value in headers.items():
         if key.lower() == "authorization":
@@ -368,6 +490,15 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
 
 
 def _redact_json_value(value: Any, key: str | None = None) -> Any:
+    """Recursively redact sensitive keys in a JSON-like structure.
+
+    Args:
+        value: JSON-like value to inspect.
+        key: Optional key associated with ``value``.
+
+    Returns:
+        Redacted value.
+    """
     if key is not None and key.lower() in SENSITIVE_KEYS:
         return REDACTED
     if isinstance(value, dict):
@@ -381,6 +512,15 @@ def _redact_json_value(value: Any, key: str | None = None) -> Any:
 
 
 def _format_debug_body(body: bytes, max_length: int = 20_000) -> str:
+    """Format a request body for safe debug logging.
+
+    Args:
+        body: Raw request body.
+        max_length: Maximum length of the formatted preview.
+
+    Returns:
+        Safe string representation for debug logs.
+    """
     if _looks_like_json(body):
         if len(body) > MAX_DEBUG_JSON_BYTES:
             return f"<json body suppressed length={len(body)}>"
@@ -403,6 +543,16 @@ def _format_response_debug_body(
     content_type: str | None,
     max_length: int = 20_000,
 ) -> str:
+    """Format a response body for safe debug logging.
+
+    Args:
+        body: Raw response body.
+        content_type: Optional ``Content-Type`` header value.
+        max_length: Maximum length of the formatted preview.
+
+    Returns:
+        Safe string representation for debug logs.
+    """
     normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
     if _should_suppress_response_body(normalized_content_type, body):
         descriptor = normalized_content_type or "unknown"
@@ -412,6 +562,15 @@ def _format_response_debug_body(
 
 
 def _should_suppress_response_body(content_type: str, body: bytes) -> bool:
+    """Decide whether a response body should be suppressed in logs.
+
+    Args:
+        content_type: Normalized response content type.
+        body: Raw response body preview.
+
+    Returns:
+        ``True`` when the body should not be logged verbatim.
+    """
     if content_type in {"application/xml", "text/xml", "application/octet-stream"}:
         return True
     if content_type.endswith("+xml"):
@@ -425,11 +584,27 @@ def _should_suppress_response_body(content_type: str, body: bytes) -> bool:
 
 
 def _looks_like_json(body: bytes) -> bool:
+    """Check whether the payload looks like JSON.
+
+    Args:
+        body: Raw payload bytes.
+
+    Returns:
+        ``True`` when the payload starts like a JSON object or array.
+    """
     preview = body.lstrip()[:1]
     return preview in {b"{", b"["}
 
 
 def _parse_retry_after_seconds(value: str | None) -> float | None:
+    """Parse a ``Retry-After`` value expressed in seconds.
+
+    Args:
+        value: Raw header value.
+
+    Returns:
+        Parsed non-negative delay in seconds, or ``None`` if parsing fails.
+    """
     if value is None:
         return None
     try:

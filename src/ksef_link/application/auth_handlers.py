@@ -1,3 +1,5 @@
+"""Application handlers for authentication-related CLI commands."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -15,7 +17,19 @@ def handle_authenticate_command(
     environment: Mapping[str, str],
     auth_port: AuthPort,
 ) -> dict[str, Any]:
-    """Run the authenticate command use case."""
+    """Run the ``authenticate`` command use case.
+
+    Args:
+        command: Typed CLI command options.
+        environment: Environment variables merged from the OS and dotenv file.
+        auth_port: Authentication port used to talk to KSeF.
+
+    Returns:
+        User-facing payload with challenge, selected certificate and issued tokens.
+
+    Raises:
+        ConfigurationError: If no KSeF token is available.
+    """
     ksef_token = command.ksef_token or environment.get("KSEF_TOKEN")
     if not ksef_token:
         raise ConfigurationError("Brakuje tokena KSeF. Podaj --ksef-token albo ustaw KSEF_TOKEN.")
@@ -35,7 +49,15 @@ def handle_refresh_command(
     command: RefreshCommandOptions,
     auth_port: AuthPort,
 ) -> dict[str, Any]:
-    """Run the refresh command use case."""
+    """Run the ``refresh`` command use case.
+
+    Args:
+        command: Typed CLI command options.
+        auth_port: Authentication port used to refresh the token.
+
+    Returns:
+        Payload containing the refreshed access token.
+    """
     access_token = auth_port.refresh_access_token(refresh_token=command.refresh_token)
     return {
         "accessToken": asdict(access_token),
@@ -43,7 +65,15 @@ def handle_refresh_command(
 
 
 def build_authorization_policy(command: AuthenticateCommandOptions) -> dict[str, Any] | None:
-    """Build KSeF authorization policy payload from CLI values."""
+    """Build the optional KSeF authorization policy payload.
+
+    Args:
+        command: Typed CLI command options.
+
+    Returns:
+        Authorization policy payload expected by KSeF, or ``None`` when no IP
+        restrictions were provided.
+    """
     allowed_ips: dict[str, list[str]] = {}
     if command.allowed_ipv4:
         allowed_ips["ip4Addresses"] = list(command.allowed_ipv4)
@@ -61,6 +91,14 @@ def build_authorization_policy(command: AuthenticateCommandOptions) -> dict[str,
 
 
 def authenticated_session_to_payload(session: AuthenticatedSession) -> dict[str, Any]:
+    """Convert an authenticated session into the CLI response payload.
+
+    Args:
+        session: Authenticated session returned by the auth port.
+
+    Returns:
+        JSON-serializable payload for stdout.
+    """
     return {
         "challenge": {
             "challenge": session.challenge.challenge,

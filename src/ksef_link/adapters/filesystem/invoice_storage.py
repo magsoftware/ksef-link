@@ -1,3 +1,5 @@
+"""Filesystem adapter for persisting downloaded invoice XML files."""
+
 from __future__ import annotations
 
 import shutil
@@ -12,9 +14,23 @@ class FileInvoiceStorage(InvoiceStoragePort):
     """Filesystem adapter for storing downloaded invoice XML files."""
 
     def __init__(self, logger: Logger) -> None:
+        """Initialize the filesystem storage adapter.
+
+        Args:
+            logger: Application logger used for debug output.
+        """
         self._logger = logger
 
     def save_invoice(self, *, download: InvoiceDownload, output_dir: Path) -> dict[str, str | None]:
+        """Persist a downloaded invoice into the target directory.
+
+        Args:
+            download: Download descriptor containing XML data or staged file path.
+            output_dir: Target directory for the final XML file.
+
+        Returns:
+            Saved file metadata exposed in the CLI response.
+        """
         output_dir.mkdir(parents=True, exist_ok=True)
         target_path = output_dir / f"{download.ksef_number}.xml"
         if download.source_path is not None:

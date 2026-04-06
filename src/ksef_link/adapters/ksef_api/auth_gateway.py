@@ -1,3 +1,5 @@
+"""Authentication-focused KSeF API adapter."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -30,20 +32,43 @@ class KsefAuthService:
         token_encryptor: TokenEncryptor | None = None,
         authentication_poller: AuthenticationPoller | None = None,
     ) -> None:
+        """Initialize the authentication gateway.
+
+        Args:
+            http_client: Shared HTTP client used to talk to KSeF.
+            certificate_selector: Optional strategy for picking certificates.
+            token_encryptor: Optional strategy for encrypting token payloads.
+            authentication_poller: Optional strategy for polling auth status.
+        """
         self._http_client = http_client
         self._certificate_selector = certificate_selector or CertificateSelector()
         self._token_encryptor = token_encryptor or TokenEncryptor()
         self._authentication_poller = authentication_poller or AuthenticationPoller()
 
     def get_auth_challenge(self) -> AuthChallenge:
+        """Request a new KSeF authentication challenge.
+
+        Returns:
+            Parsed authentication challenge.
+        """
         payload = self._http_client.request_json("POST", "/auth/challenge", content=b"")
         return AuthChallenge.from_api(payload)
 
     def get_public_key_certificates(self) -> list[PublicKeyCertificate]:
+        """Fetch public certificates published by KSeF.
+
+        Returns:
+            Parsed list of public certificates.
+        """
         payload = self._http_client.request_json("GET", "/security/public-key-certificates")
         return [PublicKeyCertificate.from_api(item) for item in payload]
 
     def get_active_encryption_certificate(self) -> PublicKeyCertificate:
+        """Select the active public certificate used for token encryption.
+
+        Returns:
+            Active encryption certificate.
+        """
         return self._certificate_selector.select_active_encryption_certificate(self.get_public_key_certificates())
 
     def encrypt_ksef_token(
@@ -53,6 +78,16 @@ class KsefAuthService:
         timestamp_ms: int,
         public_certificate_b64: str,
     ) -> str:
+        """Encrypt the KSeF token payload for ``/auth/ksef-token``.
+
+        Args:
+            ksef_token: Raw KSeF token.
+            timestamp_ms: Challenge timestamp in milliseconds.
+            public_certificate_b64: Base64-encoded DER certificate.
+
+        Returns:
+            Base64-encoded encrypted token payload.
+        """
         return self._token_encryptor.encrypt(
             ksef_token=ksef_token,
             timestamp_ms=timestamp_ms,
@@ -68,6 +103,18 @@ class KsefAuthService:
         encrypted_token: str,
         authorization_policy: dict[str, Any] | None = None,
     ) -> AuthInitResult:
+        """Start authentication using an encrypted KSeF token.
+
+        Args:
+            challenge: Challenge string returned by KSeF.
+            context_type: KSeF context identifier type.
+            context_value: KSeF context identifier value.
+            encrypted_token: Encrypted token payload.
+            authorization_policy: Optional IP restriction payload.
+
+        Returns:
+            Authentication initialization result.
+        """
         payload: dict[str, Any] = {
             "challenge": challenge,
             "contextIdentifier": {
@@ -89,6 +136,16 @@ class KsefAuthService:
         authentication_token: str,
         timeout: float | None = None,
     ) -> AuthStatus:
+        """Fetch the current status of an authentication request.
+
+        Args:
+            reference_number: Authentication reference number.
+            authentication_token: Temporary authentication token.
+            timeout: Optional per-request timeout override.
+
+        Returns:
+            Parsed authentication status.
+        """
         payload = self._http_client.request_json(
             "GET",
             f"/auth/{reference_number}",
@@ -105,6 +162,17 @@ class KsefAuthService:
         timeout_seconds: float,
         poll_interval: float,
     ) -> AuthStatus:
+        """Poll KSeF until authentication succeeds or times out.
+
+        Args:
+            reference_number: Authentication reference number.
+            authentication_token: Temporary authentication token.
+            timeout_seconds: End-to-end timeout budget for polling.
+            poll_interval: Delay between polling attempts.
+
+        Returns:
+            Final successful authentication status.
+        """
         return self._authentication_poller.wait_for_authentication(
             reference_number=reference_number,
             authentication_token=authentication_token,
@@ -118,6 +186,14 @@ class KsefAuthService:
         )
 
     def redeem_tokens(self, *, authentication_token: str) -> AuthTokens:
+        """Redeem the temporary authentication token for final tokens.
+
+        Args:
+            authentication_token: Temporary authentication token.
+
+        Returns:
+            Final access and refresh tokens.
+        """
         payload = self._http_client.request_json(
             "POST",
             "/auth/token/redeem",
@@ -127,6 +203,14 @@ class KsefAuthService:
         return AuthTokens.from_api(payload)
 
     def refresh_access_token(self, *, refresh_token: str) -> TokenInfo:
+        """Refresh the access token using a refresh token.
+
+        Args:
+            refresh_token: Refresh token issued by KSeF.
+
+        Returns:
+            Refreshed access token info.
+        """
         payload = self._http_client.request_json(
             "POST",
             "/auth/token/refresh",
@@ -145,6 +229,19 @@ class KsefAuthService:
         timeout_seconds: float,
         poll_interval: float,
     ) -> AuthenticatedSession:
+        """Run the complete KSeF token authentication flow.
+
+        Args:
+            ksef_token: Raw KSeF token.
+            context_type: KSeF context identifier type.
+            context_value: KSeF context identifier value.
+            authorization_policy: Optional IP restriction payload.
+            timeout_seconds: End-to-end timeout budget for polling.
+            poll_interval: Delay between polling attempts.
+
+        Returns:
+            Aggregated authenticated session data.
+        """
         challenge = self.get_auth_challenge()
         certificate = self.get_active_encryption_certificate()
         encrypted_token = self.encrypt_ksef_token(

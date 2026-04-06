@@ -1,3 +1,5 @@
+"""Typed command objects produced by the CLI parser."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +8,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class RuntimeOptions:
+    """Runtime configuration shared by every CLI command."""
+
     base_url: str
     timeout: float
     debug: bool
@@ -14,6 +18,8 @@ class RuntimeOptions:
 
 @dataclass(frozen=True)
 class AuthenticateCommandOptions:
+    """Arguments required by the ``authenticate`` command."""
+
     ksef_token: str | None
     context_type: str
     context_value: str
@@ -26,11 +32,15 @@ class AuthenticateCommandOptions:
 
 @dataclass(frozen=True)
 class RefreshCommandOptions:
+    """Arguments required by the ``refresh`` command."""
+
     refresh_token: str
 
 
 @dataclass(frozen=True)
 class InvoicesCommandOptions:
+    """Arguments required by the ``invoices`` command."""
+
     access_token: str | None
     refresh_token: str | None
     ksef_token: str | None
@@ -56,5 +66,7 @@ CommandOptions = AuthenticateCommandOptions | RefreshCommandOptions | InvoicesCo
 
 @dataclass(frozen=True)
 class CliOptions:
+    """Root object containing runtime options and the selected command."""
+
     runtime: RuntimeOptions
     command: CommandOptions
