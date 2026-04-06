@@ -8,6 +8,12 @@ from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
 from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryResult
 from ksef_link.shared.errors import KsefApiError
 
+INVOICE_DATE_FIELDS = {
+    "Issue": "issueDate",
+    "Invoicing": "invoicingDate",
+    "PermanentStorage": "permanentStorageDate",
+}
+
 
 class KsefInvoiceGateway:
     """KSeF invoice gateway adapter."""
@@ -138,10 +144,7 @@ class KsefInvoiceGateway:
 
 
 def _invoice_date_field_name(date_type: str) -> str:
-    if date_type == "Issue":
-        return "issueDate"
-    if date_type == "Invoicing":
-        return "invoicingDate"
-    if date_type == "PermanentStorage":
-        return "permanentStorageDate"
-    raise ValueError(f"Nieobsługiwany dateType: {date_type}")
+    try:
+        return INVOICE_DATE_FIELDS[date_type]
+    except KeyError as error:
+        raise ValueError(f"Nieobsługiwany dateType: {date_type}") from error
