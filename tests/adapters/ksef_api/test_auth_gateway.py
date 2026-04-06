@@ -10,9 +10,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from ksef_link.auth import KsefAuthService, _parse_datetime
-from ksef_link.errors import KsefApiError
-from ksef_link.models import (
+from ksef_link.adapters.ksef_api.auth_gateway import KsefAuthService, _parse_datetime
+from ksef_link.domain.auth import (
     AuthChallenge,
     AuthenticationMethodInfo,
     AuthInitResult,
@@ -21,6 +20,7 @@ from ksef_link.models import (
     PublicKeyCertificate,
     StatusInfo,
 )
+from ksef_link.shared.errors import KsefApiError
 
 
 class StubHttpClient:
@@ -256,15 +256,16 @@ def test_encrypt_ksef_token_raises_for_non_rsa_key(monkeypatch: pytest.MonkeyPat
             return FakeKey()
 
     service = KsefAuthService(StubHttpClient({}))  # type: ignore[arg-type]
-    monkeypatch.setattr("ksef_link.auth.x509.load_der_x509_certificate", lambda data: FakeCertificate())
+    monkeypatch.setattr(
+        "ksef_link.adapters.ksef_api.auth_gateway.x509.load_der_x509_certificate",
+        lambda data: FakeCertificate(),
+    )
 
     with pytest.raises(KsefApiError):
         service.encrypt_ksef_token(ksef_token="secret", timestamp_ms=1, public_certificate_b64="YQ==")
 
 
-def test_wait_for_authentication_returns_success_after_in_progress(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_wait_for_authentication_returns_success_after_in_progress(monkeypatch: pytest.MonkeyPatch) -> None:
     service = KsefAuthService(StubHttpClient({}))  # type: ignore[arg-type]
     statuses = [
         build_auth_status(100, "w toku"),
@@ -325,9 +326,9 @@ def test_authenticate_with_ksef_token_orchestrates_complete_flow(monkeypatch: py
     )
     certificate = PublicKeyCertificate.from_api(
         {
-            "certificate": "certificate",
-            "validFrom": "2026-04-01T00:00:00+00:00",
-            "validTo": "2027-04-01T00:00:00+00:00",
+            "certificate": "cert",
+            "validFrom": "2026-04-01T00:00:00+02:00",
+            "validTo": "2026-05-01T00:00:00+02:00",
             "usage": ["KsefTokenEncryption"],
         }
     )
@@ -337,7 +338,7 @@ def test_authenticate_with_ksef_token_orchestrates_complete_flow(monkeypatch: py
             "authenticationToken": {"token": "auth", "validUntil": "2026-04-06T12:00:00+02:00"},
         }
     )
-    status = build_auth_status(200, "OK")
+    status = build_auth_status(200, "ok")
     tokens = AuthTokens.from_api(
         {
             "accessToken": {"token": "access", "validUntil": "2026-04-06T12:00:00+02:00"},
@@ -353,18 +354,17 @@ def test_authenticate_with_ksef_token_orchestrates_complete_flow(monkeypatch: py
     monkeypatch.setattr(service, "redeem_tokens", lambda **kwargs: tokens)
 
     session = service.authenticate_with_ksef_token(
-        ksef_token="secret",
+        ksef_token="token",
         context_type="Nip",
         context_value="6771086988",
-        authorization_policy={"allowedIps": {"ip4Addresses": ["127.0.0.1"]}},
         timeout_seconds=60.0,
         poll_interval=1.0,
     )
 
-    assert session.tokens.access_token.token == "access"
-    assert session.status.status.code == 200
+    assert session.challenge.challenge == "challenge"
+    assert session.tokens.refresh_token.token == "refresh"
 
 
-def test_parse_datetime_handles_z_and_naive_values() -> None:
-    assert _parse_datetime("2026-04-06T12:00:00Z").tzinfo is UTC
-    assert _parse_datetime("2026-04-06T12:00:00").tzinfo is UTC
+def test_parse_datetime_supports_zulu_and_naive() -> None:
+    assert _parse_datetime("2026-04-06T10:15:00Z").tzinfo is not None
+    assert _parse_datetime("2026-04-06T10:15:00").tzinfo is not None

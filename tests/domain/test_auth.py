@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from ksef_link.models import (
+from ksef_link.domain.auth import (
     AuthChallenge,
     AuthenticationMethodInfo,
     AuthInitResult,
     AuthStatus,
     AuthTokens,
-    CliOptions,
-    HttpResponse,
-    InvoiceDownload,
-    InvoiceQueryResult,
     PublicKeyCertificate,
-    RuntimeOptions,
     StatusInfo,
     TokenInfo,
 )
@@ -130,22 +123,3 @@ def test_auth_tokens_from_api() -> None:
 
     assert auth_tokens.access_token.token == "access"
     assert auth_tokens.refresh_token.token == "refresh"
-
-
-def test_misc_dataclasses_store_values() -> None:
-    runtime = RuntimeOptions(base_url="https://api.ksef.mf.gov.pl/v2", timeout=30.0, debug=True, env_file=Path(".env"))
-    cli_options = CliOptions(runtime=runtime, command="command")  # type: ignore[arg-type]
-    query_result = InvoiceQueryResult(
-        has_more=False,
-        is_truncated=False,
-        permanent_storage_hwm_date=None,
-        pages_fetched=1,
-        invoices=[],
-    )
-    invoice_download = InvoiceDownload(ksef_number="ksef", content=b"<xml/>", content_hash="hash")
-    response = HttpResponse(status_code=200, body=b"{}", headers={"Content-Type": "application/json"})
-
-    assert cli_options.runtime.debug is True
-    assert query_result.pages_fetched == 1
-    assert invoice_download.content == b"<xml/>"
-    assert response.status_code == 200

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from ksef_link.cli import parse_arguments
-from ksef_link.models import AuthenticateCommandOptions, InvoicesCommandOptions, RefreshCommandOptions
+from ksef_link.adapters.cli.parser import parse_arguments
+from ksef_link.application.commands import AuthenticateCommandOptions, InvoicesCommandOptions, RefreshCommandOptions
 
 
 def test_parse_invoices_arguments_uses_purchase_invoice_defaults() -> None:

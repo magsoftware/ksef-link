@@ -5,14 +5,16 @@ import sys
 from collections.abc import Mapping, Sequence
 from typing import Any, TextIO
 
-from ksef_link.auth import KsefAuthService
-from ksef_link.cli import parse_arguments
-from ksef_link.config import env_flag, load_environment
-from ksef_link.errors import KsefApiError, KsefLinkError
-from ksef_link.http import KsefHttpClient
-from ksef_link.invoices import KsefInvoiceService
-from ksef_link.logging import configure_logging, get_logger
-from ksef_link.workflows import execute_command
+from ksef_link.adapters.cli.parser import parse_arguments
+from ksef_link.adapters.filesystem.invoice_storage import FileInvoiceStorage
+from ksef_link.adapters.ksef_api.auth_gateway import KsefAuthService
+from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
+from ksef_link.adapters.ksef_api.invoice_gateway import KsefInvoiceGateway
+from ksef_link.application.context import ApplicationContext
+from ksef_link.application.dispatcher import execute_command
+from ksef_link.shared.errors import KsefApiError, KsefLinkError
+from ksef_link.shared.logging import configure_logging, get_logger
+from ksef_link.shared.settings import env_flag, load_environment
 
 
 def main(argv: Sequence[str] | None = None, environment: Mapping[str, str] | None = None) -> int:
@@ -29,9 +31,13 @@ def main(argv: Sequence[str] | None = None, environment: Mapping[str, str] | Non
             timeout=options.runtime.timeout,
             logger=logger,
         ) as http_client:
-            auth_service = KsefAuthService(http_client)
-            invoice_service = KsefInvoiceService(http_client)
-            result = execute_command(options, merged_environment, auth_service, invoice_service)
+            context = ApplicationContext(
+                environment=merged_environment,
+                auth_port=KsefAuthService(http_client),
+                invoice_port=KsefInvoiceGateway(http_client),
+                invoice_storage=FileInvoiceStorage(),
+            )
+            result = execute_command(options, context)
     except KsefLinkError as error:
         logger.error("%s", error)
         _write_json(sys.stderr, _error_payload(error))

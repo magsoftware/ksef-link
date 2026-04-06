@@ -7,8 +7,9 @@ import types
 
 import pytest
 
-from ksef_link.errors import KsefLinkError
 from ksef_link.main import _error_payload, entrypoint
+from ksef_link.shared.errors import KsefLinkError
+from ksef_link.shared.logging import LOGGER_NAME
 
 
 def test_entrypoint_raises_system_exit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,3 +46,7 @@ def test_error_payload_for_generic_application_error() -> None:
     payload = _error_payload(KsefLinkError("generic"))
 
     assert payload == {"error": "generic"}
+
+
+def test_logging_wrapper_exposes_logger_name() -> None:
+    assert LOGGER_NAME == "ksef_link"

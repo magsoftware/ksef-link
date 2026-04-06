@@ -4,7 +4,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from ksef_link.models import (
+from ksef_link.application.commands import (
     AuthenticateCommandOptions,
     CliOptions,
     InvoicesCommandOptions,
@@ -207,9 +207,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> CliOptions:
             allowed_ipv4_mask=tuple(namespace.allowed_ipv4_mask),
         )
     elif namespace.command == "refresh":
-        command = RefreshCommandOptions(
-            refresh_token=namespace.refresh_token,
-        )
+        command = RefreshCommandOptions(refresh_token=namespace.refresh_token)
     else:
         command = InvoicesCommandOptions(
             access_token=namespace.access_token,

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from ksef_link.errors import KsefApiError
-from ksef_link.http import KsefHttpClient
-from ksef_link.models import InvoiceDownload, InvoiceQueryResult
+from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
+from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryResult
+from ksef_link.shared.errors import KsefApiError
 
 
-class KsefInvoiceService:
-    """Invoice metadata and document download operations."""
+class KsefInvoiceGateway:
+    """KSeF invoice gateway adapter."""
 
     def __init__(self, http_client: KsefHttpClient) -> None:
         self._http_client = http_client
@@ -111,33 +110,6 @@ class KsefInvoiceService:
             content=response.body,
             content_hash=response.headers.get("x-ms-meta-hash"),
         )
-
-    def download_invoices_to_directory(
-        self,
-        *,
-        access_token: str,
-        invoices: list[dict[str, Any]],
-        output_dir: Path,
-    ) -> list[dict[str, str | None]]:
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        downloads: list[dict[str, str | None]] = []
-        for invoice in invoices:
-            download = self.download_invoice(
-                access_token=access_token,
-                ksef_number=invoice["ksefNumber"],
-            )
-            target_path = output_dir / f"{download.ksef_number}.xml"
-            target_path.write_bytes(download.content)
-            downloads.append(
-                {
-                    "ksefNumber": download.ksef_number,
-                    "path": str(target_path),
-                    "contentHash": download.content_hash,
-                }
-            )
-
-        return downloads
 
     def _advance_truncated_date_range(
         self,

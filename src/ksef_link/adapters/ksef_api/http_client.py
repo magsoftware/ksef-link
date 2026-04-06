@@ -6,8 +6,8 @@ from typing import Any
 
 import httpx
 
-from ksef_link.errors import KsefApiError
-from ksef_link.models import HttpResponse
+from ksef_link.adapters.ksef_api.models import HttpResponse
+from ksef_link.shared.errors import KsefApiError
 
 REDACTED = "***REDACTED***"
 SENSITIVE_KEYS = {
@@ -173,7 +173,6 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
             redacted_headers[key] = REDACTED
         else:
             redacted_headers[key] = value
-
     return redacted_headers
 
 

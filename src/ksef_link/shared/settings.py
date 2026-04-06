@@ -25,7 +25,6 @@ def load_environment(env_file: Path, environment: Mapping[str, str] | None = Non
     merged_environment = _read_env_file(env_file)
     source_environment = dict(os.environ) if environment is None else dict(environment)
     merged_environment.update(source_environment)
-
     return merged_environment
 
 

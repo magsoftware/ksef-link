@@ -5,8 +5,13 @@ import logging
 import httpx
 import pytest
 
-from ksef_link.errors import KsefApiError
-from ksef_link.http import KsefHttpClient, _format_debug_body, _redact_headers, _redact_json_value
+from ksef_link.adapters.ksef_api.http_client import (
+    KsefHttpClient,
+    _format_debug_body,
+    _redact_headers,
+    _redact_json_value,
+)
+from ksef_link.shared.errors import KsefApiError
 
 
 def build_http_client(handler: httpx.MockTransport) -> KsefHttpClient:

@@ -8,9 +8,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from ksef_link.errors import KsefApiError
-from ksef_link.http import KsefHttpClient
-from ksef_link.models import (
+from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
+from ksef_link.domain.auth import (
     AuthChallenge,
     AuthenticatedSession,
     AuthInitResult,
@@ -19,6 +18,7 @@ from ksef_link.models import (
     PublicKeyCertificate,
     TokenInfo,
 )
+from ksef_link.shared.errors import KsefApiError
 
 KSEF_TOKEN_ENCRYPTION_USAGE = "KsefTokenEncryption"
 SUCCESS_STATUS_CODE = 200
@@ -26,7 +26,7 @@ IN_PROGRESS_STATUS_CODE = 100
 
 
 class KsefAuthService:
-    """Authentication-related KSeF operations."""
+    """KSeF authentication gateway adapter."""
 
     def __init__(self, http_client: KsefHttpClient) -> None:
         self._http_client = http_client

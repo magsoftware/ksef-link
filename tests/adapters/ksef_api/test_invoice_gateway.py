@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from ksef_link.errors import KsefApiError
-from ksef_link.invoices import KsefInvoiceService, _invoice_date_field_name
-from ksef_link.models import HttpResponse
+from ksef_link.adapters.ksef_api.invoice_gateway import KsefInvoiceGateway, _invoice_date_field_name
+from ksef_link.adapters.ksef_api.models import HttpResponse
+from ksef_link.shared.errors import KsefApiError
 
 
 class StubHttpClient:
@@ -60,7 +59,7 @@ class StubHttpClient:
 
 def test_query_invoice_metadata_builds_request_and_returns_payload() -> None:
     http_client = StubHttpClient(json_responses=[{"hasMore": False, "isTruncated": False, "invoices": []}])
-    service = KsefInvoiceService(http_client)  # type: ignore[arg-type]
+    service = KsefInvoiceGateway(http_client)  # type: ignore[arg-type]
 
     payload = service.query_invoice_metadata(
         access_token="access",
@@ -76,7 +75,7 @@ def test_query_invoice_metadata_builds_request_and_returns_payload() -> None:
 
 def test_query_invoice_metadata_raises_for_non_dict_payload() -> None:
     http_client = StubHttpClient(json_responses=[["not-a-dict"]])
-    service = KsefInvoiceService(http_client)  # type: ignore[arg-type]
+    service = KsefInvoiceGateway(http_client)  # type: ignore[arg-type]
 
     with pytest.raises(KsefApiError):
         service.query_invoice_metadata(
@@ -105,7 +104,7 @@ def test_query_all_invoice_metadata_handles_multiple_pages_and_deduplicates() ->
             },
         ]
     )
-    service = KsefInvoiceService(http_client)  # type: ignore[arg-type]
+    service = KsefInvoiceGateway(http_client)  # type: ignore[arg-type]
 
     result = service.query_all_invoice_metadata(
         access_token="access",
@@ -135,7 +134,7 @@ def test_query_all_invoice_metadata_handles_truncated_result() -> None:
             },
         ]
     )
-    service = KsefInvoiceService(http_client)  # type: ignore[arg-type]
+    service = KsefInvoiceGateway(http_client)  # type: ignore[arg-type]
 
     result = service.query_all_invoice_metadata(
         access_token="access",
@@ -148,32 +147,21 @@ def test_query_all_invoice_metadata_handles_truncated_result() -> None:
     assert result.pages_fetched == 2
 
 
-def test_download_invoice_and_save_to_directory(tmp_path: Path) -> None:
+def test_download_invoice_returns_xml_response() -> None:
     http_client = StubHttpClient(
-        raw_responses=[
-            HttpResponse(status_code=200, body=b"<xml>1</xml>", headers={"x-ms-meta-hash": "hash1"}),
-            HttpResponse(status_code=200, body=b"<xml>2</xml>", headers={"x-ms-meta-hash": "hash2"}),
-            HttpResponse(status_code=200, body=b"<xml>3</xml>", headers={"x-ms-meta-hash": "hash3"}),
-        ]
+        raw_responses=[HttpResponse(status_code=200, body=b"<xml>1</xml>", headers={"x-ms-meta-hash": "hash1"})]
     )
-    service = KsefInvoiceService(http_client)  # type: ignore[arg-type]
+    service = KsefInvoiceGateway(http_client)  # type: ignore[arg-type]
 
     single = service.download_invoice(access_token="access", ksef_number="1/2")
-    downloads = service.download_invoices_to_directory(
-        access_token="access",
-        invoices=[{"ksefNumber": "2"}, {"ksefNumber": "3"}],
-        output_dir=tmp_path,
-    )
 
     assert single.content_hash == "hash1"
     assert http_client.raw_calls[0]["accept"] == "application/xml"
     assert "%2F" in http_client.raw_calls[0]["path"]
-    assert (tmp_path / "2.xml").read_text(encoding="utf-8") == "<xml>2</xml>"
-    assert downloads[1]["contentHash"] == "hash3"
 
 
 def test_advance_truncated_date_range_validation_errors() -> None:
-    service = KsefInvoiceService(StubHttpClient())  # type: ignore[arg-type]
+    service = KsefInvoiceGateway(StubHttpClient())  # type: ignore[arg-type]
 
     with pytest.raises(KsefApiError):
         service._advance_truncated_date_range(
