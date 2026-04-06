@@ -173,8 +173,10 @@ def test_redaction_helpers_mask_sensitive_values() -> None:
         "items": [{"refreshToken": "***REDACTED***"}],
     }
     assert _format_debug_body(b'{"token":"secret","value":1}').count("***REDACTED***") == 1
-    assert _format_debug_body(b"plain-text") == "plain-text"
-    assert "... <truncated>" in _format_debug_body(b"a" * 21000)
+    assert "... <truncated>" in _format_debug_body(b'{"value":"' + (b"a" * 1000) + b'"}', max_length=50)
+    assert _format_debug_body(b"plain-text") == "<body suppressed length=10>"
+    assert _format_debug_body(b'{"token":') == "<json body suppressed length=9>"
+    assert _format_debug_body(b'{"data":"' + (b"a" * 17000) + b'"}').startswith("<json body suppressed length=")
     assert _format_response_debug_body(b"<xml/>", "application/xml").startswith(
         "<suppressed content-type=application/xml"
     )

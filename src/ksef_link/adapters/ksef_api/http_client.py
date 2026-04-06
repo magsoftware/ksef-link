@@ -10,6 +10,7 @@ from ksef_link.adapters.ksef_api.models import HttpResponse
 from ksef_link.shared.errors import KsefApiError
 
 REDACTED = "***REDACTED***"
+MAX_DEBUG_JSON_BYTES = 16_384
 SENSITIVE_KEYS = {
     "authorization",
     "token",
@@ -193,13 +194,16 @@ def _redact_json_value(value: Any, key: str | None = None) -> Any:
 
 
 def _format_debug_body(body: bytes, max_length: int = 20_000) -> str:
-    text = body.decode("utf-8", errors="replace")
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        formatted = text
-    else:
+    if _looks_like_json(body):
+        if len(body) > MAX_DEBUG_JSON_BYTES:
+            return f"<json body suppressed length={len(body)}>"
+        try:
+            payload = json.loads(body.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            return f"<json body suppressed length={len(body)}>"
         formatted = json.dumps(_redact_json_value(payload), ensure_ascii=False, indent=2)
+    else:
+        return f"<body suppressed length={len(body)}>"
 
     if len(formatted) <= max_length:
         return formatted
@@ -231,3 +235,8 @@ def _should_suppress_response_body(content_type: str, body: bytes) -> bool:
         return True
 
     return False
+
+
+def _looks_like_json(body: bytes) -> bool:
+    preview = body.lstrip()[:1]
+    return preview in {b"{", b"["}
