@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -264,7 +265,13 @@ def test_handle_invoices_command_includes_downloads_when_directory_is_set(tmp_pa
         wait_timeout=60.0,
     )
 
-    result = handle_invoices_command(command, {}, StubAuthService(), StubInvoiceService(), FileInvoiceStorage())
+    result = handle_invoices_command(
+        command,
+        {},
+        StubAuthService(),
+        StubInvoiceService(),
+        FileInvoiceStorage(logging.getLogger("test")),
+    )
 
     assert result["summary"]["count"] == 1
     assert result["downloads"][0]["contentHash"] == "hash"

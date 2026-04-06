@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +106,7 @@ def test_execute_command_routes_to_each_command_type() -> None:
         environment={},
         auth_port=StubAuthService(),
         invoice_port=StubInvoiceService(),
-        invoice_storage=FileInvoiceStorage(),
+        invoice_storage=FileInvoiceStorage(logging.getLogger("test")),
     )
 
     auth_result = execute_command(
@@ -170,6 +171,6 @@ def test_execute_command_raises_for_unsupported_command_type() -> None:
                 environment={},
                 auth_port=StubAuthService(),
                 invoice_port=StubInvoiceService(),
-                invoice_storage=FileInvoiceStorage(),
+                invoice_storage=FileInvoiceStorage(logging.getLogger("test")),
             ),
         )
