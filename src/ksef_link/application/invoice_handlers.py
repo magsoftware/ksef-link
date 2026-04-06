@@ -6,6 +6,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ksef_link.application.commands import InvoicesCommandOptions
+from ksef_link.application.invoice_serializers import serialize_invoice_query_result
 from ksef_link.ports.auth import AuthPort
 from ksef_link.ports.invoices import InvoicePort
 from ksef_link.ports.storage import InvoiceStoragePort
@@ -31,28 +32,17 @@ def handle_invoices_command(
         page_size=command.page_size,
     )
 
-    result: dict[str, Any] = {
-        "filters": filters,
-        "summary": {
-            "count": len(query_result.invoices),
-            "pagesFetched": query_result.pages_fetched,
-            "hasMore": query_result.has_more,
-            "isTruncated": query_result.is_truncated,
-            "permanentStorageHwmDate": query_result.permanent_storage_hwm_date,
-        },
-        "invoices": query_result.invoices,
-    }
-
     if command.download_dir is not None:
-        result["downloads"] = [
+        downloads = [
             invoice_storage.save_invoice(
                 download=invoice_port.download_invoice(access_token=access_token, ksef_number=invoice["ksefNumber"]),
                 output_dir=command.download_dir,
             )
             for invoice in query_result.invoices
         ]
+        return serialize_invoice_query_result(filters=filters, query_result=query_result, downloads=downloads)
 
-    return result
+    return serialize_invoice_query_result(filters=filters, query_result=query_result)
 
 
 def resolve_access_token(

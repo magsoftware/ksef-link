@@ -6,12 +6,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TextIO
 
 from ksef_link.adapters.cli.parser import parse_arguments
-from ksef_link.adapters.filesystem.invoice_storage import FileInvoiceStorage
-from ksef_link.adapters.ksef_api.auth_gateway import KsefAuthService
-from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
-from ksef_link.adapters.ksef_api.invoice_gateway import KsefInvoiceGateway
-from ksef_link.application.context import ApplicationContext
 from ksef_link.application.dispatcher import execute_command
+from ksef_link.bootstrap import build_application_context
 from ksef_link.shared.errors import KsefApiError, KsefLinkError
 from ksef_link.shared.logging import configure_logging, get_logger
 from ksef_link.shared.settings import env_flag, load_environment
@@ -26,17 +22,7 @@ def main(argv: Sequence[str] | None = None, environment: Mapping[str, str] | Non
     logger = get_logger()
 
     try:
-        with KsefHttpClient(
-            base_url=options.runtime.base_url,
-            timeout=options.runtime.timeout,
-            logger=logger,
-        ) as http_client:
-            context = ApplicationContext(
-                environment=merged_environment,
-                auth_port=KsefAuthService(http_client),
-                invoice_port=KsefInvoiceGateway(http_client),
-                invoice_storage=FileInvoiceStorage(),
-            )
+        with build_application_context(options, merged_environment, logger) as context:
             result = execute_command(options, context)
     except KsefLinkError as error:
         logger.error("%s", error)

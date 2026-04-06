@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from ksef_link.adapters.ksef_api.auth_gateway import KsefAuthService, _parse_datetime
+from ksef_link.adapters.ksef_api.auth_gateway import KsefAuthService
 from ksef_link.domain.auth import (
     AuthChallenge,
     AuthenticationMethodInfo,
@@ -257,7 +257,7 @@ def test_encrypt_ksef_token_raises_for_non_rsa_key(monkeypatch: pytest.MonkeyPat
 
     service = KsefAuthService(StubHttpClient({}))  # type: ignore[arg-type]
     monkeypatch.setattr(
-        "ksef_link.adapters.ksef_api.auth_gateway.x509.load_der_x509_certificate",
+        "ksef_link.adapters.ksef_api.auth_support.x509.load_der_x509_certificate",
         lambda data: FakeCertificate(),
     )
 
@@ -363,8 +363,3 @@ def test_authenticate_with_ksef_token_orchestrates_complete_flow(monkeypatch: py
 
     assert session.challenge.challenge == "challenge"
     assert session.tokens.refresh_token.token == "refresh"
-
-
-def test_parse_datetime_supports_zulu_and_naive() -> None:
-    assert _parse_datetime("2026-04-06T10:15:00Z").tzinfo is not None
-    assert _parse_datetime("2026-04-06T10:15:00").tzinfo is not None

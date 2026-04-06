@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import base64
-from datetime import UTC, datetime
 from typing import Any
 
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
-
+from ksef_link.adapters.ksef_api.auth_support import (
+    AuthenticationPoller,
+    CertificateSelector,
+    TokenEncryptor,
+)
 from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
 from ksef_link.domain.auth import (
     AuthChallenge,
@@ -18,18 +17,23 @@ from ksef_link.domain.auth import (
     PublicKeyCertificate,
     TokenInfo,
 )
-from ksef_link.shared.errors import KsefApiError
-
-KSEF_TOKEN_ENCRYPTION_USAGE = "KsefTokenEncryption"
-SUCCESS_STATUS_CODE = 200
-IN_PROGRESS_STATUS_CODE = 100
 
 
 class KsefAuthService:
     """KSeF authentication gateway adapter."""
 
-    def __init__(self, http_client: KsefHttpClient) -> None:
+    def __init__(
+        self,
+        http_client: KsefHttpClient,
+        *,
+        certificate_selector: CertificateSelector | None = None,
+        token_encryptor: TokenEncryptor | None = None,
+        authentication_poller: AuthenticationPoller | None = None,
+    ) -> None:
         self._http_client = http_client
+        self._certificate_selector = certificate_selector or CertificateSelector()
+        self._token_encryptor = token_encryptor or TokenEncryptor()
+        self._authentication_poller = authentication_poller or AuthenticationPoller()
 
     def get_auth_challenge(self) -> AuthChallenge:
         payload = self._http_client.request_json("POST", "/auth/challenge", content=b"")
@@ -40,24 +44,7 @@ class KsefAuthService:
         return [PublicKeyCertificate.from_api(item) for item in payload]
 
     def get_active_encryption_certificate(self) -> PublicKeyCertificate:
-        now = datetime.now(UTC)
-        matching_certificates = [
-            certificate
-            for certificate in self.get_public_key_certificates()
-            if KSEF_TOKEN_ENCRYPTION_USAGE in certificate.usage
-        ]
-        if not matching_certificates:
-            raise KsefApiError("KSeF nie zwrócił certyfikatu z usage=KsefTokenEncryption.")
-
-        active_certificates = [
-            certificate
-            for certificate in matching_certificates
-            if _parse_datetime(certificate.valid_from) <= now <= _parse_datetime(certificate.valid_to)
-        ]
-        if active_certificates:
-            return max(active_certificates, key=lambda certificate: _parse_datetime(certificate.valid_to))
-
-        return max(matching_certificates, key=lambda certificate: _parse_datetime(certificate.valid_to))
+        return self._certificate_selector.select_active_encryption_certificate(self.get_public_key_certificates())
 
     def encrypt_ksef_token(
         self,
@@ -66,22 +53,11 @@ class KsefAuthService:
         timestamp_ms: int,
         public_certificate_b64: str,
     ) -> str:
-        plaintext = f"{ksef_token}|{timestamp_ms}".encode()
-        certificate_der = base64.b64decode(public_certificate_b64)
-        certificate = x509.load_der_x509_certificate(certificate_der)
-        public_key = certificate.public_key()
-        if not isinstance(public_key, rsa.RSAPublicKey):
-            raise KsefApiError("Certyfikat klucza publicznego KSeF nie zawiera klucza RSA.")
-
-        encrypted = public_key.encrypt(
-            plaintext,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None,
-            ),
+        return self._token_encryptor.encrypt(
+            ksef_token=ksef_token,
+            timestamp_ms=timestamp_ms,
+            public_certificate_b64=public_certificate_b64,
         )
-        return base64.b64encode(encrypted).decode("ascii")
 
     def start_token_authentication(
         self,
@@ -127,42 +103,14 @@ class KsefAuthService:
         timeout_seconds: float,
         poll_interval: float,
     ) -> AuthStatus:
-        start = datetime.now(UTC).timestamp()
-        last_status: AuthStatus | None = None
-
-        while datetime.now(UTC).timestamp() - start < timeout_seconds:
-            last_status = self.get_auth_status(
-                reference_number=reference_number,
-                authentication_token=authentication_token,
-            )
-            if last_status.status.code == SUCCESS_STATUS_CODE:
-                return last_status
-            if last_status.status.code != IN_PROGRESS_STATUS_CODE:
-                raise KsefApiError(
-                    "Uwierzytelnienie KSeF zakończyło się błędem.",
-                    error_code=last_status.status.code,
-                    details=last_status.status.details,
-                    body={
-                        "code": last_status.status.code,
-                        "description": last_status.status.description,
-                        "details": last_status.status.details,
-                    },
-                )
-
-            from time import sleep
-
-            sleep(poll_interval)
-
-        raise KsefApiError(
-            "Przekroczono czas oczekiwania na zakończenie uwierzytelnienia.",
-            body=(
-                {
-                    "code": last_status.status.code,
-                    "description": last_status.status.description,
-                    "details": last_status.status.details,
-                }
-                if last_status is not None
-                else None
+        return self._authentication_poller.wait_for_authentication(
+            reference_number=reference_number,
+            authentication_token=authentication_token,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+            get_auth_status=lambda ref, token: self.get_auth_status(
+                reference_number=ref,
+                authentication_token=token,
             ),
         )
 
@@ -222,11 +170,3 @@ class KsefAuthService:
             status=status,
             tokens=tokens,
         )
-
-
-def _parse_datetime(value: str) -> datetime:
-    normalized = value.replace("Z", "+00:00")
-    parsed = datetime.fromisoformat(normalized)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed

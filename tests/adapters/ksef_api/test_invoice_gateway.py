@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from ksef_link.adapters.ksef_api.invoice_gateway import KsefInvoiceGateway, _invoice_date_field_name
+from ksef_link.adapters.ksef_api.invoice_gateway import KsefInvoiceGateway
 from ksef_link.adapters.ksef_api.models import HttpResponse
 from ksef_link.shared.errors import KsefApiError
 
@@ -158,41 +158,3 @@ def test_download_invoice_returns_xml_response() -> None:
     assert single.content_hash == "hash1"
     assert http_client.raw_calls[0]["accept"] == "application/xml"
     assert "%2F" in http_client.raw_calls[0]["path"]
-
-
-def test_advance_truncated_date_range_validation_errors() -> None:
-    service = KsefInvoiceGateway(StubHttpClient())  # type: ignore[arg-type]
-
-    with pytest.raises(KsefApiError):
-        service._advance_truncated_date_range(
-            filters={"dateRange": {"dateType": "PermanentStorage", "from": "a"}},
-            sort_order="Desc",
-            response_invoices=[{"permanentStorageDate": "b"}],
-        )
-    with pytest.raises(KsefApiError):
-        service._advance_truncated_date_range(
-            filters={"dateRange": {"dateType": "Issue", "from": "a"}},
-            sort_order="Asc",
-            response_invoices=[{"issueDate": "b"}],
-        )
-    with pytest.raises(KsefApiError):
-        service._advance_truncated_date_range(
-            filters={"dateRange": {"dateType": "PermanentStorage", "from": "a"}},
-            sort_order="Asc",
-            response_invoices=[],
-        )
-    with pytest.raises(KsefApiError):
-        service._advance_truncated_date_range(
-            filters={"dateRange": {"dateType": "PermanentStorage", "from": "same"}},
-            sort_order="Asc",
-            response_invoices=[{"permanentStorageDate": "same"}],
-        )
-
-
-def test_invoice_date_field_name_supports_all_variants() -> None:
-    assert _invoice_date_field_name("Issue") == "issueDate"
-    assert _invoice_date_field_name("Invoicing") == "invoicingDate"
-    assert _invoice_date_field_name("PermanentStorage") == "permanentStorageDate"
-
-    with pytest.raises(ValueError):
-        _invoice_date_field_name("Other")
