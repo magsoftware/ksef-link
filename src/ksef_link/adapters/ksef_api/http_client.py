@@ -131,7 +131,10 @@ class KsefHttpClient:
             json.dumps(_redact_headers(dict(response.headers.items())), ensure_ascii=False),
         )
         if response.content:
-            self._logger.debug("Response body: %s", _format_debug_body(response.content))
+            self._logger.debug(
+                "Response body: %s",
+                _format_response_debug_body(response.content, response.headers.get("Content-Type")),
+            )
             return
         self._logger.debug("Response body: <empty>")
 
@@ -202,3 +205,29 @@ def _format_debug_body(body: bytes, max_length: int = 20_000) -> str:
         return formatted
 
     return f"{formatted[:max_length]}\n... <truncated>"
+
+
+def _format_response_debug_body(
+    body: bytes,
+    content_type: str | None,
+    max_length: int = 20_000,
+) -> str:
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if _should_suppress_response_body(normalized_content_type, body):
+        descriptor = normalized_content_type or "unknown"
+        return f"<suppressed content-type={descriptor} length={len(body)}>"
+
+    return _format_debug_body(body, max_length=max_length)
+
+
+def _should_suppress_response_body(content_type: str, body: bytes) -> bool:
+    if content_type in {"application/xml", "text/xml", "application/octet-stream"}:
+        return True
+    if content_type.endswith("+xml"):
+        return True
+
+    preview = body.lstrip()[:32]
+    if preview.startswith(b"<?xml") or preview.startswith(b"<"):
+        return True
+
+    return False

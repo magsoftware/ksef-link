@@ -8,6 +8,7 @@ import pytest
 from ksef_link.adapters.ksef_api.http_client import (
     KsefHttpClient,
     _format_debug_body,
+    _format_response_debug_body,
     _redact_headers,
     _redact_json_value,
 )
@@ -56,6 +57,23 @@ def test_request_returns_raw_http_response() -> None:
     assert response.status_code == 200
     assert response.body == b"<xml/>"
     assert response.headers["x-ms-meta-hash"] == "x"
+
+
+def test_response_logging_suppresses_xml_body_in_debug_mode(caplog: pytest.LogCaptureFixture) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            content=b"<Invoice><Seller>Name</Seller></Invoice>",
+            headers={"Content-Type": "application/xml", "x-ms-meta-hash": "x"},
+        )
+    )
+    http_client = build_http_client(transport)
+
+    with caplog.at_level(logging.DEBUG):
+        http_client.request("GET", "/invoices/ksef/1", accept="application/xml")
+
+    assert "<Invoice>" not in caplog.text
+    assert "<suppressed content-type=application/xml length=" in caplog.text
 
 
 def test_request_json_returns_none_for_empty_body() -> None:
@@ -157,3 +175,11 @@ def test_redaction_helpers_mask_sensitive_values() -> None:
     assert _format_debug_body(b'{"token":"secret","value":1}').count("***REDACTED***") == 1
     assert _format_debug_body(b"plain-text") == "plain-text"
     assert "... <truncated>" in _format_debug_body(b"a" * 21000)
+    assert _format_response_debug_body(b"<xml/>", "application/xml").startswith(
+        "<suppressed content-type=application/xml"
+    )
+    assert _format_response_debug_body(b"<xml/>", "application/problem+xml").startswith(
+        "<suppressed content-type=application/problem+xml"
+    )
+    assert _format_response_debug_body(b'{"token":"secret"}', "application/json").count("***REDACTED***") == 1
+    assert _format_response_debug_body(b"<xml/>", None).startswith("<suppressed content-type=unknown")
