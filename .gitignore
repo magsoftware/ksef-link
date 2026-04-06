@@ -26,6 +26,7 @@ ENV/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.uv-cache/
 .hypothesis/
 .tox/
 .nox/
@@ -34,6 +35,7 @@ coverage.xml
 reports/
 generated-*.pdf
 full-test-*.pdf
+invoices/
 
 # OS-specific files
 .DS_Store
