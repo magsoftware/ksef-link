@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ksef_link.domain.invoices import InvoiceQueryResult
+from ksef_link.domain.invoices import InvoiceQueryFilters, InvoiceQueryResult
 
 
 def serialize_invoice_query_result(
     *,
-    filters: dict[str, Any],
+    filters: InvoiceQueryFilters,
     query_result: InvoiceQueryResult,
     downloads: list[dict[str, str | None]] | None = None,
 ) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from logging import Logger
 from pathlib import Path
 
@@ -16,7 +17,11 @@ class FileInvoiceStorage(InvoiceStoragePort):
     def save_invoice(self, *, download: InvoiceDownload, output_dir: Path) -> dict[str, str | None]:
         output_dir.mkdir(parents=True, exist_ok=True)
         target_path = output_dir / f"{download.ksef_number}.xml"
-        target_path.write_bytes(download.content)
+        if download.source_path is not None:
+            shutil.move(str(download.source_path), target_path)
+        else:
+            assert download.content is not None
+            target_path.write_bytes(download.content)
         self._logger.debug("Saved invoice XML to %s for ksefNumber=%s", target_path, download.ksef_number)
         return {
             "ksefNumber": download.ksef_number,

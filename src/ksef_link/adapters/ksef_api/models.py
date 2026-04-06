@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ksef_link.shared.errors import KsefApiError
@@ -10,6 +11,13 @@ from ksef_link.shared.errors import KsefApiError
 class HttpResponse:
     status_code: int
     body: bytes
+    headers: dict[str, str]
+
+
+@dataclass(frozen=True)
+class StreamedHttpResponse:
+    status_code: int
+    file_path: Path
     headers: dict[str, str]
 
 

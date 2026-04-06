@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 import httpx
 
-from ksef_link.adapters.ksef_api.models import HttpResponse
+from ksef_link.adapters.ksef_api.models import HttpResponse, StreamedHttpResponse
 from ksef_link.shared.errors import KsefApiError
 
 REDACTED = "***REDACTED***"
@@ -73,7 +76,7 @@ class KsefHttpClient:
         method: str,
         path: str,
         *,
-        json_body: dict[str, Any] | None = None,
+        json_body: Mapping[str, Any] | None = None,
         bearer_token: str | None = None,
         content: bytes | None = None,
         accept: str = "application/json",
@@ -151,7 +154,7 @@ class KsefHttpClient:
         method: str,
         path: str,
         *,
-        json_body: dict[str, Any] | None = None,
+        json_body: Mapping[str, Any] | None = None,
         bearer_token: str | None = None,
         content: bytes | None = None,
         timeout: float | None = None,
@@ -169,6 +172,91 @@ class KsefHttpClient:
             return None
 
         return json.loads(response.body.decode("utf-8"))
+
+    def request_stream_to_file(
+        self,
+        method: str,
+        path: str,
+        *,
+        bearer_token: str | None = None,
+        content: bytes | None = None,
+        accept: str = "application/octet-stream",
+        timeout: float | None = None,
+    ) -> StreamedHttpResponse:
+        """Send an HTTP request and stream the response body into a temporary file."""
+        headers: dict[str, str] = {
+            "Accept": accept,
+        }
+        if bearer_token:
+            headers["Authorization"] = f"Bearer {bearer_token}"
+
+        attempt = 1
+        while True:
+            self._log_request(method=method, path=path, headers=headers, body=content)
+
+            try:
+                with self._client.stream(method, path, headers=headers, content=content, timeout=timeout) as response:
+                    self._logger.debug("HTTP response status: %s", response.status_code)
+                    self._logger.debug(
+                        "Response headers: %s",
+                        json.dumps(_redact_headers(dict(response.headers.items())), ensure_ascii=False),
+                    )
+
+                    if (
+                        response.status_code in RETRYABLE_STATUS_CODES
+                        and self._should_retry_request(method=method, path=path, attempt=attempt)
+                    ):
+                        delay = self._retry_delay_seconds(
+                            attempt=attempt,
+                            retry_after=_parse_retry_after_seconds(response.headers.get("Retry-After")),
+                        )
+                        self._logger.warning(
+                            "Retrying %s %s after HTTP %s on attempt %s/%s in %.2fs",
+                            method,
+                            path,
+                            response.status_code,
+                            attempt,
+                            self._max_attempts,
+                            delay,
+                        )
+                        self._sleep(delay)
+                        attempt += 1
+                        continue
+
+                    if response.is_error:
+                        response.read()
+                        self._log_response(response)
+                        self._raise_api_error(response)
+
+                    file_path, content_length = self._stream_response_to_temp_file(response)
+                    content_type = response.headers.get("Content-Type", "unknown")
+                    self._logger.debug(
+                        "Response body: <streamed content-type=%s length=%s file=%s>",
+                        content_type,
+                        content_length,
+                        file_path,
+                    )
+                    return StreamedHttpResponse(
+                        status_code=response.status_code,
+                        file_path=file_path,
+                        headers=dict(response.headers.items()),
+                    )
+            except httpx.TransportError as error:
+                self._logger.debug("HTTP transport error: %s", error)
+                if self._should_retry_request(method=method, path=path, attempt=attempt):
+                    delay = self._retry_delay_seconds(attempt=attempt)
+                    self._logger.warning(
+                        "Retrying %s %s after transport error on attempt %s/%s in %.2fs",
+                        method,
+                        path,
+                        attempt,
+                        self._max_attempts,
+                        delay,
+                    )
+                    self._sleep(delay)
+                    attempt += 1
+                    continue
+                raise KsefApiError(f"Błąd połączenia z API KSeF: {error}") from error
 
     def _log_request(
         self,
@@ -252,6 +340,21 @@ class KsefHttpClient:
         if delay > self._max_retry_delay:
             return self._max_retry_delay
         return delay
+
+    def _stream_response_to_temp_file(self, response: httpx.Response) -> tuple[Path, int]:
+        file_descriptor, file_name = tempfile.mkstemp(prefix="ksef-link-", suffix=".xml")
+        os.close(file_descriptor)
+        target_path = Path(file_name)
+        bytes_written = 0
+        try:
+            with target_path.open("wb") as target_file:
+                for chunk in response.iter_bytes():
+                    target_file.write(chunk)
+                    bytes_written += len(chunk)
+        except Exception:
+            target_path.unlink(missing_ok=True)
+            raise
+        return target_path, bytes_written
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:

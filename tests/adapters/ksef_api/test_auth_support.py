@@ -87,28 +87,27 @@ def test_certificate_selector_prefers_latest_active_certificate() -> None:
     assert selected.certificate == "newer"
 
 
-def test_certificate_selector_falls_back_to_latest_inactive_certificate() -> None:
+def test_certificate_selector_raises_when_only_inactive_certificates_are_available() -> None:
     selector = CertificateSelector()
 
-    selected = selector.select_active_encryption_certificate(
-        [
-            _build_public_certificate(
-                certificate="older",
-                valid_from="2025-04-01T00:00:00+00:00",
-                valid_to="2025-04-10T00:00:00+00:00",
-                usage=["KsefTokenEncryption"],
-            ),
-            _build_public_certificate(
-                certificate="newer",
-                valid_from="2025-04-01T00:00:00+00:00",
-                valid_to="2025-04-20T00:00:00+00:00",
-                usage=["KsefTokenEncryption"],
-            ),
-        ],
-        now=datetime(2026, 4, 6, tzinfo=UTC),
-    )
-
-    assert selected.certificate == "newer"
+    with pytest.raises(KsefApiError):
+        selector.select_active_encryption_certificate(
+            [
+                _build_public_certificate(
+                    certificate="older",
+                    valid_from="2025-04-01T00:00:00+00:00",
+                    valid_to="2025-04-10T00:00:00+00:00",
+                    usage=["KsefTokenEncryption"],
+                ),
+                _build_public_certificate(
+                    certificate="newer",
+                    valid_from="2025-04-01T00:00:00+00:00",
+                    valid_to="2025-04-20T00:00:00+00:00",
+                    usage=["KsefTokenEncryption"],
+                ),
+            ],
+            now=datetime(2026, 4, 6, tzinfo=UTC),
+        )
 
 
 def test_certificate_selector_raises_when_usage_missing() -> None:

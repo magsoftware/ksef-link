@@ -4,6 +4,7 @@ import base64
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from enum import IntEnum
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
@@ -13,8 +14,11 @@ from ksef_link.domain.auth import AuthStatus, PublicKeyCertificate
 from ksef_link.shared.errors import KsefApiError
 
 KSEF_TOKEN_ENCRYPTION_USAGE = "KsefTokenEncryption"
-SUCCESS_STATUS_CODE = 200
-IN_PROGRESS_STATUS_CODE = 100
+
+
+class AuthenticationStatusCode(IntEnum):
+    IN_PROGRESS = 100
+    SUCCESS = 200
 
 
 class CertificateSelector:
@@ -43,7 +47,7 @@ class CertificateSelector:
         if active_certificates:
             return max(active_certificates, key=lambda certificate: _parse_datetime(certificate.valid_to))
 
-        return max(matching_certificates, key=lambda certificate: _parse_datetime(certificate.valid_to))
+        raise KsefApiError("KSeF nie zwrócił aktywnego certyfikatu z usage=KsefTokenEncryption.")
 
 
 class TokenEncryptor:
@@ -105,9 +109,9 @@ class AuthenticationPoller:
                 break
 
             last_status = get_auth_status(reference_number, authentication_token, remaining_budget)
-            if last_status.status.code == SUCCESS_STATUS_CODE:
+            if last_status.status.code == AuthenticationStatusCode.SUCCESS:
                 return last_status
-            if last_status.status.code != IN_PROGRESS_STATUS_CODE:
+            if last_status.status.code != AuthenticationStatusCode.IN_PROGRESS:
                 raise KsefApiError(
                     "Uwierzytelnienie KSeF zakończyło się błędem.",
                     error_code=last_status.status.code,

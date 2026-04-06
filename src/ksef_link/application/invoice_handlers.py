@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from ksef_link.application.commands import InvoicesCommandOptions
 from ksef_link.application.invoice_serializers import serialize_invoice_query_result
+from ksef_link.domain.invoices import InvoiceDateRangeFilter, InvoiceQueryFilters
 from ksef_link.ports.auth import AuthPort
 from ksef_link.ports.invoices import InvoicePort
 from ksef_link.ports.storage import InvoiceStoragePort
@@ -91,24 +92,28 @@ def resolve_auth_context(
     return context_type, context_value
 
 
-def build_invoice_filters(command: InvoicesCommandOptions, now: datetime | None = None) -> dict[str, Any]:
+def build_invoice_filters(command: InvoicesCommandOptions, now: datetime | None = None) -> InvoiceQueryFilters:
     """Build KSeF invoice query filters."""
     date_from, date_to = current_month_range_warsaw(now)
-    filters: dict[str, Any] = {
+    date_range: InvoiceDateRangeFilter = {
+        "dateType": command.date_type,
+        "from": command.date_from or date_from,
+        "to": command.date_to or date_to,
+        "restrictToPermanentStorageHwmDate": False,
+    }
+    filters: InvoiceQueryFilters = {
         "subjectType": command.subject_type,
-        "dateRange": {
-            "dateType": command.date_type,
-            "from": command.date_from or date_from,
-            "to": command.date_to or date_to,
-        },
+        "dateRange": date_range,
     }
     if command.date_type == "PermanentStorage" and command.restrict_to_hwm:
         filters["dateRange"]["restrictToPermanentStorageHwmDate"] = True
-    if command.ksef_number:
+    else:
+        filters["dateRange"]["restrictToPermanentStorageHwmDate"] = False
+    if command.ksef_number is not None:
         filters["ksefNumber"] = command.ksef_number
-    if command.invoice_number:
+    if command.invoice_number is not None:
         filters["invoiceNumber"] = command.invoice_number
-    if command.seller_nip:
+    if command.seller_nip is not None:
         filters["sellerNip"] = command.seller_nip
     return filters
 

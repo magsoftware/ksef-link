@@ -6,7 +6,7 @@ from urllib.parse import quote, urlencode
 from ksef_link.adapters.ksef_api.http_client import KsefHttpClient
 from ksef_link.adapters.ksef_api.models import InvoiceMetadataPage
 from ksef_link.adapters.ksef_api.pagination import InvoiceMetadataPaginator
-from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryResult
+from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryFilters, InvoiceQueryResult
 
 
 class KsefInvoiceGateway:
@@ -19,7 +19,7 @@ class KsefInvoiceGateway:
         self,
         *,
         access_token: str,
-        filters: dict[str, Any],
+        filters: InvoiceQueryFilters,
         sort_order: str,
         page_offset: int,
         page_size: int,
@@ -37,7 +37,7 @@ class KsefInvoiceGateway:
         self,
         *,
         access_token: str,
-        filters: dict[str, Any],
+        filters: InvoiceQueryFilters,
         sort_order: str,
         page_size: int,
     ) -> InvoiceQueryResult:
@@ -55,7 +55,7 @@ class KsefInvoiceGateway:
         return paginator.collect_all()
 
     def download_invoice(self, *, access_token: str, ksef_number: str) -> InvoiceDownload:
-        response = self._http_client.request(
+        response = self._http_client.request_stream_to_file(
             "GET",
             f"/invoices/ksef/{quote(ksef_number, safe='')}",
             bearer_token=access_token,
@@ -63,15 +63,15 @@ class KsefInvoiceGateway:
         )
         return InvoiceDownload(
             ksef_number=ksef_number,
-            content=response.body,
             content_hash=response.headers.get("x-ms-meta-hash"),
+            source_path=response.file_path,
         )
 
     def query_invoice_metadata_page(
         self,
         *,
         access_token: str,
-        filters: dict[str, Any],
+        filters: InvoiceQueryFilters,
         sort_order: str,
         page_offset: int,
         page_size: int,

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 
 import httpx
 import pytest
@@ -66,6 +69,142 @@ def test_request_returns_raw_http_response() -> None:
     assert response.status_code == 200
     assert response.body == b"<xml/>"
     assert response.headers["x-ms-meta-hash"] == "x"
+
+
+def test_request_stream_to_file_writes_response_body_to_temp_file() -> None:
+    captured_headers: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_headers
+        captured_headers = dict(request.headers.items())
+        return httpx.Response(
+            200,
+            content=b"<xml/>",
+            headers={"Content-Type": "application/xml", "x-ms-meta-hash": "hash1"},
+        )
+
+    transport = httpx.MockTransport(
+        handler
+    )
+    http_client = build_http_client(transport)
+
+    response = http_client.request_stream_to_file(
+        "GET",
+        "/invoices/ksef/1",
+        bearer_token="secret-token",
+        accept="application/xml",
+    )
+
+    try:
+        assert response.status_code == 200
+        assert response.headers["x-ms-meta-hash"] == "hash1"
+        assert captured_headers["authorization"] == "Bearer secret-token"
+        assert response.file_path.exists()
+        assert response.file_path.read_bytes() == b"<xml/>"
+    finally:
+        response.file_path.unlink(missing_ok=True)
+
+
+def test_request_stream_to_file_retries_transport_error_for_get_and_then_succeeds() -> None:
+    calls = 0
+    sleep_calls: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, content=b"<xml/>", headers={"Content-Type": "application/xml"})
+
+    http_client = build_http_client(httpx.MockTransport(handler), sleep_fn=sleep_calls.append)
+
+    response = http_client.request_stream_to_file("GET", "/invoices/ksef/1", accept="application/xml")
+
+    try:
+        assert calls == 2
+        assert sleep_calls == [0.5]
+        assert response.file_path.read_bytes() == b"<xml/>"
+    finally:
+        response.file_path.unlink(missing_ok=True)
+
+
+def test_request_stream_to_file_retries_retryable_status_and_honors_retry_after() -> None:
+    calls = 0
+    sleep_calls: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503, content=b"busy", headers={"Retry-After": "1.5"})
+        return httpx.Response(200, content=b"<xml/>", headers={"Content-Type": "application/xml"})
+
+    http_client = build_http_client(httpx.MockTransport(handler), sleep_fn=sleep_calls.append)
+
+    response = http_client.request_stream_to_file("GET", "/invoices/ksef/1", accept="application/xml")
+
+    try:
+        assert calls == 2
+        assert sleep_calls == [1.5]
+        assert response.file_path.read_bytes() == b"<xml/>"
+    finally:
+        response.file_path.unlink(missing_ok=True)
+
+
+def test_request_stream_to_file_raises_api_error_for_error_response() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            500,
+            json={"title": "Broken", "detail": "stream failed", "status": 500},
+        )
+    )
+    http_client = build_http_client(transport)
+
+    with pytest.raises(KsefApiError) as error:
+        http_client.request_stream_to_file("GET", "/invoices/ksef/1", accept="application/xml")
+
+    assert error.value.status_code == 500
+    assert error.value.details == "stream failed"
+
+
+def test_request_stream_to_file_raises_api_error_for_non_retryable_transport_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connect failed", request=request)
+
+    http_client = build_http_client(httpx.MockTransport(handler))
+
+    with pytest.raises(KsefApiError) as error:
+        http_client.request_stream_to_file("POST", "/auth/token/redeem", content=b"payload")
+
+    assert "Błąd połączenia" in str(error.value)
+
+
+def test_stream_response_to_temp_file_cleans_up_partial_file_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target_path = tmp_path / "partial.xml"
+
+    def fake_mkstemp(*, prefix: str, suffix: str) -> tuple[int, str]:
+        file_descriptor = os.open(
+            str(target_path),
+            os.O_CREAT | os.O_RDWR,
+            0o600,
+        )
+        return file_descriptor, str(target_path)
+
+    class FailingResponse:
+        def iter_bytes(self) -> object:
+            raise RuntimeError("stream failed")
+
+    monkeypatch.setattr(tempfile, "mkstemp", fake_mkstemp)
+
+    http_client = build_http_client(httpx.MockTransport(lambda request: httpx.Response(200)))
+
+    with pytest.raises(RuntimeError, match="stream failed"):
+        http_client._stream_response_to_temp_file(FailingResponse())  # type: ignore[arg-type]
+
+    assert not target_path.exists()
 
 
 def test_response_logging_suppresses_xml_body_in_debug_mode(caplog: pytest.LogCaptureFixture) -> None:

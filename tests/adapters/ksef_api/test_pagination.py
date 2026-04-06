@@ -6,7 +6,20 @@ import pytest
 
 from ksef_link.adapters.ksef_api.models import InvoiceMetadataPage
 from ksef_link.adapters.ksef_api.pagination import InvoiceMetadataPaginator, _invoice_date_field_name
+from ksef_link.domain.invoices import InvoiceQueryFilters
 from ksef_link.shared.errors import KsefApiError
+
+
+def _build_filters(date_type: str, date_from: str) -> InvoiceQueryFilters:
+    return {
+        "subjectType": "Subject2",
+        "dateRange": {
+            "dateType": date_type,
+            "from": date_from,
+            "to": "2026-04-30T23:59:59+02:00",
+            "restrictToPermanentStorageHwmDate": False,
+        },
+    }
 
 
 def test_collect_all_deduplicates_invoices_across_pages() -> None:
@@ -26,7 +39,7 @@ def test_collect_all_deduplicates_invoices_across_pages() -> None:
     ]
     paginator = InvoiceMetadataPaginator(
         fetch_page=lambda filters, page_offset: pages.pop(0),
-        filters={"dateRange": {"dateType": "PermanentStorage", "from": "a"}},
+        filters=_build_filters("PermanentStorage", "a"),
         sort_order="Asc",
     )
 
@@ -54,13 +67,13 @@ def test_collect_all_handles_truncated_result_by_advancing_date_range() -> None:
     ]
     seen_filters: list[dict[str, Any]] = []
 
-    def fetch_page(filters: dict[str, Any], page_offset: int) -> InvoiceMetadataPage:
+    def fetch_page(filters: InvoiceQueryFilters, page_offset: int) -> InvoiceMetadataPage:
         seen_filters.append({"from": filters["dateRange"]["from"], "pageOffset": page_offset})
         return pages.pop(0)
 
     paginator = InvoiceMetadataPaginator(
         fetch_page=fetch_page,
-        filters={"dateRange": {"dateType": "PermanentStorage", "from": "2026-04-01T00:00:00+02:00"}},
+        filters=_build_filters("PermanentStorage", "2026-04-01T00:00:00+02:00"),
         sort_order="Asc",
     )
 
@@ -73,6 +86,22 @@ def test_collect_all_handles_truncated_result_by_advancing_date_range() -> None:
     ]
 
 
+def test_collect_all_raises_for_ambiguous_truncated_last_page() -> None:
+    paginator = InvoiceMetadataPaginator(
+        fetch_page=lambda filters, page_offset: InvoiceMetadataPage(
+            has_more=False,
+            is_truncated=True,
+            permanent_storage_hwm_date="hwm",
+            invoices=[{"ksefNumber": "1"}],
+        ),
+        filters=_build_filters("PermanentStorage", "a"),
+        sort_order="Asc",
+    )
+
+    with pytest.raises(KsefApiError):
+        paginator.collect_all()
+
+
 def test_advance_truncated_date_range_validation_errors() -> None:
     paginator = InvoiceMetadataPaginator(
         fetch_page=lambda filters, page_offset: InvoiceMetadataPage(
@@ -81,7 +110,7 @@ def test_advance_truncated_date_range_validation_errors() -> None:
             permanent_storage_hwm_date=None,
             invoices=[],
         ),
-        filters={"dateRange": {"dateType": "PermanentStorage", "from": "a"}},
+        filters=_build_filters("PermanentStorage", "a"),
         sort_order="Asc",
     )
 
@@ -93,7 +122,7 @@ def test_advance_truncated_date_range_validation_errors() -> None:
                 permanent_storage_hwm_date=None,
                 invoices=[],
             ),
-            filters={"dateRange": {"dateType": "PermanentStorage", "from": "a"}},
+            filters=_build_filters("PermanentStorage", "a"),
             sort_order="Desc",
         )._advance_truncated_date_range(response_invoices=[{"permanentStorageDate": "b"}])
 
@@ -105,7 +134,7 @@ def test_advance_truncated_date_range_validation_errors() -> None:
                 permanent_storage_hwm_date=None,
                 invoices=[],
             ),
-            filters={"dateRange": {"dateType": "Issue", "from": "a"}},
+            filters=_build_filters("Issue", "a"),
             sort_order="Asc",
         )._advance_truncated_date_range(response_invoices=[{"issueDate": "b"}])
 
@@ -120,7 +149,7 @@ def test_advance_truncated_date_range_validation_errors() -> None:
                 permanent_storage_hwm_date=None,
                 invoices=[],
             ),
-            filters={"dateRange": {"dateType": "PermanentStorage", "from": "same"}},
+            filters=_build_filters("PermanentStorage", "same"),
             sort_order="Asc",
         )._advance_truncated_date_range(response_invoices=[{"permanentStorageDate": "same"}])
 

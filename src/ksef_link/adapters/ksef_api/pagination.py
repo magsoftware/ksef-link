@@ -5,7 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from ksef_link.adapters.ksef_api.models import InvoiceMetadataPage
-from ksef_link.domain.invoices import InvoiceQueryResult
+from ksef_link.domain.invoices import InvoiceQueryFilters, InvoiceQueryResult
 from ksef_link.shared.errors import KsefApiError
 
 INVOICE_DATE_FIELDS = {
@@ -21,8 +21,8 @@ class InvoiceMetadataPaginator:
     def __init__(
         self,
         *,
-        fetch_page: Callable[[dict[str, Any], int], InvoiceMetadataPage],
-        filters: dict[str, Any],
+        fetch_page: Callable[[InvoiceQueryFilters, int], InvoiceMetadataPage],
+        filters: InvoiceQueryFilters,
         sort_order: str,
     ) -> None:
         self._fetch_page = fetch_page
@@ -49,6 +49,11 @@ class InvoiceMetadataPaginator:
                     continue
                 seen_ksef_numbers.add(ksef_number)
                 invoices.append(invoice)
+
+            if page.is_truncated and not page.has_more:
+                raise KsefApiError(
+                    "KSeF zwrócił niejednoznaczne flagi paginacji: hasMore=false oraz isTruncated=true."
+                )
 
             if not page.has_more:
                 return InvoiceQueryResult(

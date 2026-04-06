@@ -27,7 +27,7 @@ from ksef_link.domain.auth import (
     StatusInfo,
     TokenInfo,
 )
-from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryResult
+from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryFilters, InvoiceQueryResult
 from ksef_link.shared.errors import ConfigurationError
 
 
@@ -90,7 +90,7 @@ class StubInvoiceService:
         self,
         *,
         access_token: str,
-        filters: dict[str, Any],
+        filters: InvoiceQueryFilters,
         sort_order: str,
         page_size: int,
     ) -> InvoiceQueryResult:
@@ -103,7 +103,7 @@ class StubInvoiceService:
         )
 
     def download_invoice(self, *, access_token: str, ksef_number: str) -> InvoiceDownload:
-        return InvoiceDownload(ksef_number=ksef_number, content=b"<xml>1</xml>", content_hash="hash")
+        return InvoiceDownload(ksef_number=ksef_number, content_hash="hash", content=b"<xml>1</xml>")
 
 
 def build_invoices_command() -> InvoicesCommandOptions:

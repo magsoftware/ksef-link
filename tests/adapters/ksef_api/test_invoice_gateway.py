@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from ksef_link.adapters.ksef_api.invoice_gateway import KsefInvoiceGateway
-from ksef_link.adapters.ksef_api.models import HttpResponse
+from ksef_link.adapters.ksef_api.models import HttpResponse, StreamedHttpResponse
+from ksef_link.domain.invoices import InvoiceQueryFilters
 from ksef_link.shared.errors import KsefApiError
 
 
@@ -14,11 +16,14 @@ class StubHttpClient:
         self,
         json_responses: list[Any] | None = None,
         raw_responses: list[HttpResponse] | None = None,
+        streamed_responses: list[StreamedHttpResponse] | None = None,
     ) -> None:
         self.json_responses = json_responses or []
         self.raw_responses = raw_responses or []
+        self.streamed_responses = streamed_responses or []
         self.json_calls: list[dict[str, Any]] = []
         self.raw_calls: list[dict[str, Any]] = []
+        self.stream_calls: list[dict[str, Any]] = []
 
     def request_json(
         self,
@@ -55,6 +60,39 @@ class StubHttpClient:
             }
         )
         return self.raw_responses.pop(0)
+
+    def request_stream_to_file(
+        self,
+        method: str,
+        path: str,
+        *,
+        bearer_token: str | None = None,
+        content: bytes | None = None,
+        accept: str = "application/octet-stream",
+        timeout: float | None = None,
+    ) -> StreamedHttpResponse:
+        self.stream_calls.append(
+            {
+                "method": method,
+                "path": path,
+                "bearer_token": bearer_token,
+                "content": content,
+                "accept": accept,
+                "timeout": timeout,
+            }
+        )
+        return self.streamed_responses.pop(0)
+
+
+def _build_filters(date_from: str) -> InvoiceQueryFilters:
+    return {
+        "dateRange": {
+            "dateType": "PermanentStorage",
+            "from": date_from,
+            "to": "2026-04-30T23:59:59+02:00",
+            "restrictToPermanentStorageHwmDate": False,
+        }
+    }
 
 
 def test_query_invoice_metadata_builds_request_and_returns_payload() -> None:
@@ -108,7 +146,7 @@ def test_query_all_invoice_metadata_handles_multiple_pages_and_deduplicates() ->
 
     result = service.query_all_invoice_metadata(
         access_token="access",
-        filters={"dateRange": {"dateType": "PermanentStorage", "from": "a"}},
+        filters=_build_filters("a"),
         sort_order="Asc",
         page_size=250,
     )
@@ -138,7 +176,7 @@ def test_query_all_invoice_metadata_handles_truncated_result() -> None:
 
     result = service.query_all_invoice_metadata(
         access_token="access",
-        filters={"dateRange": {"dateType": "PermanentStorage", "from": "2026-04-01T00:00:00+02:00"}},
+        filters=_build_filters("2026-04-01T00:00:00+02:00"),
         sort_order="Asc",
         page_size=250,
     )
@@ -147,14 +185,19 @@ def test_query_all_invoice_metadata_handles_truncated_result() -> None:
     assert result.pages_fetched == 2
 
 
-def test_download_invoice_returns_xml_response() -> None:
+def test_download_invoice_returns_xml_response(tmp_path: Path) -> None:
+    source = tmp_path / "stream.xml"
+    source.write_text("<xml>1</xml>", encoding="utf-8")
     http_client = StubHttpClient(
-        raw_responses=[HttpResponse(status_code=200, body=b"<xml>1</xml>", headers={"x-ms-meta-hash": "hash1"})]
+        streamed_responses=[
+            StreamedHttpResponse(status_code=200, file_path=source, headers={"x-ms-meta-hash": "hash1"})
+        ]
     )
     service = KsefInvoiceGateway(http_client)  # type: ignore[arg-type]
 
     single = service.download_invoice(access_token="access", ksef_number="1/2")
 
     assert single.content_hash == "hash1"
-    assert http_client.raw_calls[0]["accept"] == "application/xml"
-    assert "%2F" in http_client.raw_calls[0]["path"]
+    assert single.source_path == source
+    assert http_client.stream_calls[0]["accept"] == "application/xml"
+    assert "%2F" in http_client.stream_calls[0]["path"]

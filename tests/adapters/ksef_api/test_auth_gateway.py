@@ -196,7 +196,7 @@ def test_get_public_key_certificates_and_active_selection() -> None:
     assert selected.certificate == "second"
 
 
-def test_get_active_encryption_certificate_falls_back_to_latest_inactive() -> None:
+def test_get_active_encryption_certificate_raises_when_only_inactive_certificates_are_available() -> None:
     http_client = StubHttpClient(
         {
             ("GET", "/security/public-key-certificates"): [
@@ -217,9 +217,8 @@ def test_get_active_encryption_certificate_falls_back_to_latest_inactive() -> No
     )
     service = KsefAuthService(http_client)  # type: ignore[arg-type]
 
-    selected = service.get_active_encryption_certificate()
-
-    assert selected.certificate == "newer"
+    with pytest.raises(KsefApiError):
+        service.get_active_encryption_certificate()
 
 
 def test_get_active_encryption_certificate_raises_when_usage_missing() -> None:

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
-from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryResult
+from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryFilters, InvoiceQueryResult
 
 
 class InvoicePort(Protocol):
@@ -10,7 +10,7 @@ class InvoicePort(Protocol):
         self,
         *,
         access_token: str,
-        filters: dict[str, Any],
+        filters: InvoiceQueryFilters,
         sort_order: str,
         page_size: int,
     ) -> InvoiceQueryResult:

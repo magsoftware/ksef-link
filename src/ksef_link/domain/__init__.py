@@ -11,7 +11,12 @@ from ksef_link.domain.auth import (
     StatusInfo,
     TokenInfo,
 )
-from ksef_link.domain.invoices import InvoiceDownload, InvoiceQueryResult
+from ksef_link.domain.invoices import (
+    InvoiceDateRangeFilter,
+    InvoiceDownload,
+    InvoiceQueryFilters,
+    InvoiceQueryResult,
+)
 
 __all__ = [
     "AuthChallenge",
@@ -20,7 +25,9 @@ __all__ = [
     "AuthInitResult",
     "AuthStatus",
     "AuthTokens",
+    "InvoiceDateRangeFilter",
     "InvoiceDownload",
+    "InvoiceQueryFilters",
     "InvoiceQueryResult",
     "PublicKeyCertificate",
     "StatusInfo",
