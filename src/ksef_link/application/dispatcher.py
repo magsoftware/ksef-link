@@ -89,6 +89,6 @@ def execute_command(options: CliOptions, context: ApplicationContext) -> dict[st
         ConfigurationError: If the command type is not supported by the dispatcher.
     """
     handler = COMMAND_HANDLERS.get(type(options.command))
-    if handler is not None:
-        return handler(options.command, context)
-    raise ConfigurationError("Nieobsługiwany typ komendy.")
+    if handler is None:
+        raise ConfigurationError("Nieobsługiwany typ komendy.")
+    return handler(options.command, context)
