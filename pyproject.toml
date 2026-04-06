@@ -1,0 +1,63 @@
+[project]
+name = "ksef-link"
+version = "0.1.0"
+description = "CLI and Python package for authentication and invoice operations in KSeF"
+readme = "README.md"
+authors = [
+    { name = "Marek Gmyrek" },
+]
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "cryptography>=46.0.0,<47",
+    "httpx>=0.28.0,<1",
+    "python-dotenv>=1.1.1,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.18.2",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.0",
+]
+
+[project.scripts]
+ksef-link = "ksef_link.main:main"
+
+[build-system]
+requires = ["setuptools>=80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=src/ksef_link --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/ksef_link"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "B",
+    "C90",
+    "E",
+    "F",
+    "I",
+    "UP",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.mypy]
+python_version = "3.14"
+files = ["src", "tests"]
+strict = true
+warn_unused_configs = true
