@@ -36,8 +36,20 @@ class StubHttpClient:
         json_body: dict[str, Any] | None = None,
         bearer_token: str | None = None,
         content: bytes | None = None,
+        timeout: float | None = None,
     ) -> Any:
-        self.calls.append((method, path, {"json_body": json_body, "bearer_token": bearer_token, "content": content}))
+        self.calls.append(
+            (
+                method,
+                path,
+                {
+                    "json_body": json_body,
+                    "bearer_token": bearer_token,
+                    "content": content,
+                    "timeout": timeout,
+                },
+            )
+        )
         return self.responses[(method, path)]
 
 
@@ -127,6 +139,33 @@ def test_get_auth_challenge_and_token_related_methods() -> None:
     assert status.status.code == 200
     assert tokens.access_token.token == "access"
     assert refreshed.token == "access2"
+    assert http_client.calls[2][2]["timeout"] is None
+
+
+def test_get_auth_status_forwards_timeout_override() -> None:
+    http_client = StubHttpClient(
+        {
+            ("GET", "/auth/ref"): {
+                "startDate": "2026-04-06T12:00:00+02:00",
+                "authenticationMethod": "Token",
+                "authenticationMethodInfo": {
+                    "category": "Token",
+                    "code": "token.ksef",
+                    "displayName": "Token KSeF",
+                },
+                "status": {
+                    "code": 200,
+                    "description": "OK",
+                },
+            },
+        }
+    )
+    service = KsefAuthService(http_client)  # type: ignore[arg-type]
+
+    status = service.get_auth_status(reference_number="ref", authentication_token="auth", timeout=7.5)
+
+    assert status.status.code == 200
+    assert http_client.calls[0][2]["timeout"] == 7.5
 
 
 def test_get_public_key_certificates_and_active_selection() -> None:

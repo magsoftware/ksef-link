@@ -77,6 +77,7 @@ class KsefHttpClient:
         bearer_token: str | None = None,
         content: bytes | None = None,
         accept: str = "application/json",
+        timeout: float | None = None,
     ) -> HttpResponse:
         """Send an HTTP request and return the raw response."""
         headers: dict[str, str] = {
@@ -95,7 +96,7 @@ class KsefHttpClient:
             self._log_request(method=method, path=path, headers=headers, body=body)
 
             try:
-                response = self._client.request(method, path, headers=headers, content=body)
+                response = self._client.request(method, path, headers=headers, content=body, timeout=timeout)
             except httpx.TransportError as error:
                 self._logger.debug("HTTP transport error: %s", error)
                 if self._should_retry_request(method=method, path=path, attempt=attempt):
@@ -153,6 +154,7 @@ class KsefHttpClient:
         json_body: dict[str, Any] | None = None,
         bearer_token: str | None = None,
         content: bytes | None = None,
+        timeout: float | None = None,
     ) -> Any:
         """Send an HTTP request and parse a JSON response body."""
         response = self.request(
@@ -161,6 +163,7 @@ class KsefHttpClient:
             json_body=json_body,
             bearer_token=bearer_token,
             content=content,
+            timeout=timeout,
         )
         if not response.body:
             return None

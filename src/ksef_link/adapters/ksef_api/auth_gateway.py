@@ -87,11 +87,13 @@ class KsefAuthService:
         *,
         reference_number: str,
         authentication_token: str,
+        timeout: float | None = None,
     ) -> AuthStatus:
         payload = self._http_client.request_json(
             "GET",
             f"/auth/{reference_number}",
             bearer_token=authentication_token,
+            timeout=timeout,
         )
         return AuthStatus.from_api(payload)
 
@@ -108,9 +110,10 @@ class KsefAuthService:
             authentication_token=authentication_token,
             timeout_seconds=timeout_seconds,
             poll_interval=poll_interval,
-            get_auth_status=lambda ref, token: self.get_auth_status(
+            get_auth_status=lambda ref, token, request_timeout: self.get_auth_status(
                 reference_number=ref,
                 authentication_token=token,
+                timeout=request_timeout,
             ),
         )
 
