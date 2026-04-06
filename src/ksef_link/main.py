@@ -25,7 +25,10 @@ def main(argv: Sequence[str] | None = None, environment: Mapping[str, str] | Non
         with build_application_context(options, merged_environment, logger) as context:
             result = execute_command(options, context)
     except KsefLinkError as error:
-        logger.error("%s", error)
+        if isinstance(error, KsefApiError):
+            logger.error("%s | diagnostics=%s", error, error.to_log_payload())
+        else:
+            logger.error("%s", error)
         _write_json(sys.stderr, _error_payload(error))
         return 1
 

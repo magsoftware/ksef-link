@@ -73,7 +73,9 @@ def test_main_writes_error_payload_for_application_error(
     exit_code = main([])
 
     assert exit_code == 1
-    assert '"statusCode": 403' in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert '"statusCode": 403' in stderr
+    assert '"body"' not in stderr
 
 
 def test_main_uses_env_debug_flag(
@@ -109,3 +111,50 @@ def test_main_writes_generic_error_payload_for_non_api_error(
 
     assert exit_code == 1
     assert '"error": "boom"' in capsys.readouterr().err
+
+
+def test_main_logs_api_diagnostics_but_hides_body_from_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class StubLogger:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+        def error(self, message: str, *args: object) -> None:
+            self.calls.append((message, args))
+
+    logger = StubLogger()
+    monkeypatch.setattr("ksef_link.main.parse_arguments", lambda argv=None: build_cli_options())
+    monkeypatch.setattr("ksef_link.main.load_environment", lambda env_file, environment=None: {})
+    monkeypatch.setattr("ksef_link.main.configure_logging", lambda debug: None)
+    monkeypatch.setattr("ksef_link.main.get_logger", lambda: logger)
+    monkeypatch.setattr(
+        "ksef_link.main.execute_command",
+        lambda options, context: (_ for _ in ()).throw(
+            KsefApiError(
+                "boom",
+                status_code=403,
+                error_code="missing-permissions",
+                details=["detail"],
+                body={"traceId": "abc", "internal": "secret"},
+            )
+        ),
+    )
+
+    exit_code = main([])
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert '"body"' not in stderr
+    assert len(logger.calls) == 1
+    message, args = logger.calls[0]
+    assert message == "%s | diagnostics=%s"
+    assert str(args[0]) == "boom"
+    assert args[1] == {
+        "error": "boom",
+        "statusCode": 403,
+        "errorCode": "missing-permissions",
+        "details": ["detail"],
+        "body": {"traceId": "abc", "internal": "secret"},
+    }

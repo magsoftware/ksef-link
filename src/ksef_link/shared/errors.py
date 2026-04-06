@@ -30,7 +30,16 @@ class KsefApiError(KsefLinkError):
         self.body = body
 
     def to_payload(self) -> dict[str, Any]:
-        """Convert the error into a JSON-serializable payload."""
+        """Convert the error into a user-facing JSON payload."""
+        return {
+            "error": str(self),
+            "statusCode": self.status_code,
+            "errorCode": self.error_code,
+            "details": self.details,
+        }
+
+    def to_log_payload(self) -> dict[str, Any]:
+        """Convert the error into a diagnostic payload for logs."""
         return {
             "error": str(self),
             "statusCode": self.status_code,
