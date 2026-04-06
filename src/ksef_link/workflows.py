@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from ksef_link.auth import KsefAuthService
@@ -19,6 +19,14 @@ from ksef_link.models import (
 )
 
 WARSAW_TIMEZONE = ZoneInfo("Europe/Warsaw")
+
+
+type CommandHandler = (
+    Callable[
+        [object, Mapping[str, str], KsefAuthService, KsefInvoiceService],
+        dict[str, Any],
+    ]
+)
 
 
 class AuthTokenResolver(Protocol):
@@ -40,6 +48,42 @@ class AuthTokenResolver(Protocol):
         ...
 
 
+def _dispatch_authenticate_command(
+    command: object,
+    environment: Mapping[str, str],
+    auth_service: KsefAuthService,
+    invoice_service: KsefInvoiceService,
+) -> dict[str, Any]:
+    del invoice_service
+    return run_authenticate_command(cast(AuthenticateCommandOptions, command), environment, auth_service)
+
+
+def _dispatch_refresh_command(
+    command: object,
+    environment: Mapping[str, str],
+    auth_service: KsefAuthService,
+    invoice_service: KsefInvoiceService,
+) -> dict[str, Any]:
+    del environment, invoice_service
+    return run_refresh_command(cast(RefreshCommandOptions, command), auth_service)
+
+
+def _dispatch_invoices_command(
+    command: object,
+    environment: Mapping[str, str],
+    auth_service: KsefAuthService,
+    invoice_service: KsefInvoiceService,
+) -> dict[str, Any]:
+    return run_invoices_command(cast(InvoicesCommandOptions, command), environment, auth_service, invoice_service)
+
+
+COMMAND_HANDLERS: dict[type[object], CommandHandler] = {
+    AuthenticateCommandOptions: _dispatch_authenticate_command,
+    RefreshCommandOptions: _dispatch_refresh_command,
+    InvoicesCommandOptions: _dispatch_invoices_command,
+}
+
+
 def execute_command(
     options: CliOptions,
     environment: Mapping[str, str],
@@ -48,13 +92,9 @@ def execute_command(
 ) -> dict[str, Any]:
     """Execute the selected CLI command."""
     command = options.command
-
-    if isinstance(command, AuthenticateCommandOptions):
-        return run_authenticate_command(command, environment, auth_service)
-    if isinstance(command, RefreshCommandOptions):
-        return run_refresh_command(command, auth_service)
-    if isinstance(command, InvoicesCommandOptions):
-        return run_invoices_command(command, environment, auth_service, invoice_service)
+    handler = COMMAND_HANDLERS.get(type(command))
+    if handler is not None:
+        return handler(command, environment, auth_service, invoice_service)
 
     raise ConfigurationError("Nieobsługiwany typ komendy.")
 

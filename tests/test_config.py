@@ -28,3 +28,9 @@ def test_env_flag_recognizes_truthy_values() -> None:
     assert env_flag("yes") is True
     assert env_flag("false") is False
     assert env_flag(None) is False
+
+
+def test_load_environment_returns_process_environment_when_dotenv_is_missing(tmp_path: Path) -> None:
+    loaded = load_environment(tmp_path / ".env", environment={"KSEF_TOKEN": "env-only"})
+
+    assert loaded["KSEF_TOKEN"] == "env-only"
