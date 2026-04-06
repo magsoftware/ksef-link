@@ -11,26 +11,47 @@ Projekt jest ułożony jako pakiet `src/`, uruchamiany przez `uv`, z walidacją 
 
 ## Struktura projektu
 
+Projekt używa architektury heksagonalnej (ports & adapters) z podziałem na warstwy:
+
 ```text
 src/ksef_link/
-  auth.py
-  cli.py
-  config.py
-  errors.py
-  http.py
-  invoices.py
-  logging.py
+  __init__.py
+  __main__.py
+  bootstrap.py
   main.py
-  models.py
-  workflows.py
+  adapters/          # Implementacje zewnętrznych interfejsów
+    cli/
+      parser.py
+    filesystem/
+      invoice_storage.py
+    ksef_api/
+      auth_gateway.py
+      auth_support.py
+      http_client.py
+      invoice_gateway.py
+      models.py
+      pagination.py
+  application/       # Logika aplikacji i przypadki użycia
+    auth_handlers.py
+    commands.py
+    context.py
+    dispatcher.py
+    invoice_handlers.py
+    invoice_serializers.py
+  domain/            # Model domenowy
+    auth.py
+    invoices.py
+  ports/             # Interfejsy (abstrakcje)
+    auth.py
+    invoices.py
+    storage.py
+  shared/            # Wspólne komponenty
+    errors.py
+    logging.py
+    settings.py
 
-tests/
-  test_cli.py
-  test_config.py
-  test_main.py
-  test_workflows.py
-
-pyproject.toml
+tests/               # Testy jednostkowe i integracyjne
+  ...
 ```
 
 ## Setup

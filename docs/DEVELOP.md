@@ -11,17 +11,15 @@
 
 ## Architecture
 
-Projekt jest rozdzielony na małe moduły odpowiedzialności:
+Projekt używa architektury heksagonalnej (ports & adapters) z podziałem na warstwy odpowiedzialności:
 
-- `cli.py` - parser argumentów i mapowanie CLI na opcje domenowe,
-- `config.py` - odczyt `.env` przez `python-dotenv`,
-- `logging.py` - konfiguracja loggera projektu,
-- `errors.py` - wyjątki domenowe,
-- `http.py` - transport HTTP, debug logi i mapowanie błędów API,
-- `auth.py` - operacje uwierzytelnienia KSeF,
-- `invoices.py` - query metadanych i pobieranie XML,
-- `workflows.py` - orkiestracja przypadków użycia CLI,
-- `main.py` - wejście aplikacji.
+- `adapters/` - implementacje zewnętrznych interfejsów (CLI, filesystem, KSeF API)
+- `application/` - logika aplikacji, przypadki użycia i orkiestracja
+- `domain/` - model domenowy i reguły biznesowe
+- `ports/` - abstrakcje i interfejsy
+- `shared/` - wspólne komponenty (logging, settings, errors)
+- `bootstrap.py` - inicjalizacja aplikacji i dependency injection
+- `main.py` - punkt wejścia aplikacji
 
 ## Design Rules
 
