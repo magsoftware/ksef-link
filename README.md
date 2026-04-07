@@ -122,8 +122,8 @@ Komenda `invoices`:
 - domyślnie używa `subjectType=Subject2`, czyli faktur zakupowych
 - domyślnie używa `dateType=PermanentStorage`
 - domyślnie pobiera zakres od pierwszego dnia bieżącego miesiąca do chwili uruchomienia w strefie `Europe/Warsaw`
-- bierze `accessToken` z CLI lub `.env`
-- jeśli `accessToken` nie istnieje, próbuje `refreshToken`
+- bierze `accessToken` z CLI lub `KSEF_ACCESS_TOKEN`
+- jeśli `accessToken` nie istnieje, próbuje `refreshToken` z CLI lub `KSEF_REFRESH_TOKEN`
 - jeśli nie ma także `refreshToken`, wykonuje pełny flow uwierzytelnienia z `KSEF_TOKEN`
 
 ## Endpointy KSeF używane przez projekt

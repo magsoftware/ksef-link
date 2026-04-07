@@ -188,6 +188,18 @@ def test_resolve_access_token_uses_refresh_token_when_access_token_is_missing() 
     assert auth_service.refresh_calls == ["refresh-token"]
 
 
+def test_resolve_access_token_ignores_legacy_environment_aliases() -> None:
+    with pytest.raises(ConfigurationError):
+        resolve_access_token(
+            build_invoices_command(),
+            {
+                "ACCESS_TOKEN": "legacy-access",
+                "REFRESH_TOKEN": "legacy-refresh",
+            },
+            StubAuthService(),
+        )
+
+
 def test_resolve_access_token_runs_full_authentication_flow_when_needed() -> None:
     auth_service = StubAuthService()
 

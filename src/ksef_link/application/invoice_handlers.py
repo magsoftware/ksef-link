@@ -77,11 +77,11 @@ def resolve_access_token(
     Raises:
         ConfigurationError: If no access path can be resolved.
     """
-    access_token = command.access_token or environment.get("KSEF_ACCESS_TOKEN") or environment.get("ACCESS_TOKEN")
+    access_token = command.access_token or environment.get("KSEF_ACCESS_TOKEN")
     if access_token:
         return access_token
 
-    refresh_token = command.refresh_token or environment.get("KSEF_REFRESH_TOKEN") or environment.get("REFRESH_TOKEN")
+    refresh_token = command.refresh_token or environment.get("KSEF_REFRESH_TOKEN")
     if refresh_token:
         return auth_port.refresh_access_token(refresh_token=refresh_token).token
 
@@ -143,16 +143,14 @@ def build_invoice_filters(command: InvoicesCommandOptions, now: datetime | None 
         "dateType": command.date_type,
         "from": command.date_from or date_from,
         "to": command.date_to or date_to,
-        "restrictToPermanentStorageHwmDate": False,
+        "restrictToPermanentStorageHwmDate": (
+            command.date_type == "PermanentStorage" and command.restrict_to_hwm
+        ),
     }
     filters: InvoiceQueryFilters = {
         "subjectType": command.subject_type,
         "dateRange": date_range,
     }
-    if command.date_type == "PermanentStorage" and command.restrict_to_hwm:
-        filters["dateRange"]["restrictToPermanentStorageHwmDate"] = True
-    else:
-        filters["dateRange"]["restrictToPermanentStorageHwmDate"] = False
     if command.ksef_number is not None:
         filters["ksefNumber"] = command.ksef_number
     if command.invoice_number is not None:

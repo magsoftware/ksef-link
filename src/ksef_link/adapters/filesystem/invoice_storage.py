@@ -34,10 +34,11 @@ class FileInvoiceStorage(InvoiceStoragePort):
         output_dir.mkdir(parents=True, exist_ok=True)
         target_path = output_dir / f"{download.ksef_number}.xml"
         if download.source_path is not None:
-            shutil.move(str(download.source_path), target_path)
-        else:
-            assert download.content is not None
+            shutil.move(download.source_path, target_path)
+        elif download.content is not None:
             target_path.write_bytes(download.content)
+        else:
+            raise ValueError("Expected invoice content when source_path is not provided.")
         self._logger.debug("Saved invoice XML to %s for ksefNumber=%s", target_path, download.ksef_number)
         return {
             "ksefNumber": download.ksef_number,
