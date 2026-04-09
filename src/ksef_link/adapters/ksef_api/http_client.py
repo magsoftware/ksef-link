@@ -8,8 +8,9 @@ import os
 import tempfile
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
@@ -36,6 +37,15 @@ SENSITIVE_KEYS = {
     "authenticationtoken",
     "kseftoken",
 }
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class _RetryDirective:
+    """Internal signal indicating the request should be retried."""
+
+    status_code: int
+    retry_after: float | None = None
 
 
 class KsefHttpClient:
@@ -133,50 +143,19 @@ class KsefHttpClient:
             body = json.dumps(json_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
 
-        attempt = 1
-        while True:
+        def execute(attempt: int) -> HttpResponse | _RetryDirective:
             self._log_request(method=method, path=path, headers=headers, body=body)
-
-            try:
-                response = self._client.request(method, path, headers=headers, content=body, timeout=timeout)
-            except httpx.TransportError as error:
-                self._logger.debug("HTTP transport error: %s", error)
-                if self._should_retry_request(method=method, path=path, attempt=attempt):
-                    delay = self._retry_delay_seconds(attempt=attempt)
-                    self._logger.warning(
-                        "Retrying %s %s after transport error on attempt %s/%s in %.2fs",
-                        method,
-                        path,
-                        attempt,
-                        self._max_attempts,
-                        delay,
-                    )
-                    self._sleep(delay)
-                    attempt += 1
-                    continue
-                raise KsefApiError(f"Błąd połączenia z API KSeF: {error}") from error
+            response = self._client.request(method, path, headers=headers, content=body, timeout=timeout)
 
             self._log_response(response)
 
             if response.status_code in RETRYABLE_STATUS_CODES and self._should_retry_request(
                 method=method, path=path, attempt=attempt
             ):
-                delay = self._retry_delay_seconds(
-                    attempt=attempt,
+                return _RetryDirective(
+                    status_code=response.status_code,
                     retry_after=_parse_retry_after_seconds(response.headers.get("Retry-After")),
                 )
-                self._logger.warning(
-                    "Retrying %s %s after HTTP %s on attempt %s/%s in %.2fs",
-                    method,
-                    path,
-                    response.status_code,
-                    attempt,
-                    self._max_attempts,
-                    delay,
-                )
-                self._sleep(delay)
-                attempt += 1
-                continue
 
             if response.is_error:
                 self._raise_api_error(response)
@@ -186,6 +165,8 @@ class KsefHttpClient:
                 body=response.content,
                 headers=dict(response.headers.items()),
             )
+
+        return self._execute_with_retry(method=method, path=path, operation=execute)
 
     def request_json(
         self,
@@ -255,56 +236,57 @@ class KsefHttpClient:
         if bearer_token:
             headers["Authorization"] = f"Bearer {bearer_token}"
 
-        attempt = 1
-        while True:
+        def execute(attempt: int) -> StreamedHttpResponse | _RetryDirective:
             self._log_request(method=method, path=path, headers=headers, body=content)
 
-            try:
-                with self._client.stream(method, path, headers=headers, content=content, timeout=timeout) as response:
-                    self._logger.debug("HTTP response status: %s", response.status_code)
-                    self._logger.debug(
-                        "Response headers: %s",
-                        json.dumps(_redact_headers(dict(response.headers.items())), ensure_ascii=False),
-                    )
+            with self._client.stream(method, path, headers=headers, content=content, timeout=timeout) as response:
+                self._logger.debug("HTTP response status: %s", response.status_code)
+                self._logger.debug(
+                    "Response headers: %s",
+                    json.dumps(_redact_headers(dict(response.headers.items())), ensure_ascii=False),
+                )
 
-                    if response.status_code in RETRYABLE_STATUS_CODES and self._should_retry_request(
-                        method=method, path=path, attempt=attempt
-                    ):
-                        delay = self._retry_delay_seconds(
-                            attempt=attempt,
-                            retry_after=_parse_retry_after_seconds(response.headers.get("Retry-After")),
-                        )
-                        self._logger.warning(
-                            "Retrying %s %s after HTTP %s on attempt %s/%s in %.2fs",
-                            method,
-                            path,
-                            response.status_code,
-                            attempt,
-                            self._max_attempts,
-                            delay,
-                        )
-                        self._sleep(delay)
-                        attempt += 1
-                        continue
-
-                    if response.is_error:
-                        response.read()
-                        self._log_response(response)
-                        self._raise_api_error(response)
-
-                    file_path, content_length = self._stream_response_to_temp_file(response)
-                    content_type = response.headers.get("Content-Type", "unknown")
-                    self._logger.debug(
-                        "Response body: <streamed content-type=%s length=%s file=%s>",
-                        content_type,
-                        content_length,
-                        file_path,
-                    )
-                    return StreamedHttpResponse(
+                if response.status_code in RETRYABLE_STATUS_CODES and self._should_retry_request(
+                    method=method, path=path, attempt=attempt
+                ):
+                    return _RetryDirective(
                         status_code=response.status_code,
-                        file_path=file_path,
-                        headers=dict(response.headers.items()),
+                        retry_after=_parse_retry_after_seconds(response.headers.get("Retry-After")),
                     )
+
+                if response.is_error:
+                    response.read()
+                    self._log_response(response)
+                    self._raise_api_error(response)
+
+                file_path, content_length = self._stream_response_to_temp_file(response)
+                content_type = response.headers.get("Content-Type", "unknown")
+                self._logger.debug(
+                    "Response body: <streamed content-type=%s length=%s file=%s>",
+                    content_type,
+                    content_length,
+                    file_path,
+                )
+                return StreamedHttpResponse(
+                    status_code=response.status_code,
+                    file_path=file_path,
+                    headers=dict(response.headers.items()),
+                )
+
+        return self._execute_with_retry(method=method, path=path, operation=execute)
+
+    def _execute_with_retry(
+        self,
+        *,
+        method: str,
+        path: str,
+        operation: Callable[[int], T | _RetryDirective],
+    ) -> T:
+        """Run a request operation with shared transport and status retry handling."""
+        attempt = 1
+        while True:
+            try:
+                result = operation(attempt)
             except httpx.TransportError as error:
                 self._logger.debug("HTTP transport error: %s", error)
                 if self._should_retry_request(method=method, path=path, attempt=attempt):
@@ -321,6 +303,23 @@ class KsefHttpClient:
                     attempt += 1
                     continue
                 raise KsefApiError(f"Błąd połączenia z API KSeF: {error}") from error
+
+            if isinstance(result, _RetryDirective):
+                delay = self._retry_delay_seconds(attempt=attempt, retry_after=result.retry_after)
+                self._logger.warning(
+                    "Retrying %s %s after HTTP %s on attempt %s/%s in %.2fs",
+                    method,
+                    path,
+                    result.status_code,
+                    attempt,
+                    self._max_attempts,
+                    delay,
+                )
+                self._sleep(delay)
+                attempt += 1
+                continue
+
+            return result
 
     def _log_request(
         self,

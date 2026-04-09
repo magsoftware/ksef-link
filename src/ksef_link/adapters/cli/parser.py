@@ -221,7 +221,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> CliOptions:
         )
     elif namespace.command == "refresh":
         command = RefreshCommandOptions(refresh_token=namespace.refresh_token)
-    else:
+    elif namespace.command == "invoices":
         command = InvoicesCommandOptions(
             access_token=namespace.access_token,
             refresh_token=namespace.refresh_token,
@@ -242,5 +242,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> CliOptions:
             poll_interval=namespace.poll_interval,
             wait_timeout=namespace.wait_timeout,
         )
+    else:
+        raise ValueError(f"Unsupported command: {namespace.command}")
 
     return CliOptions(runtime=runtime, command=command)

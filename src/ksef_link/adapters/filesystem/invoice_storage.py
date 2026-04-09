@@ -7,10 +7,9 @@ from logging import Logger
 from pathlib import Path
 
 from ksef_link.domain.invoices import InvoiceDownload
-from ksef_link.ports.storage import InvoiceStoragePort
 
 
-class FileInvoiceStorage(InvoiceStoragePort):
+class FileInvoiceStorage:
     """Filesystem adapter for storing downloaded invoice XML files."""
 
     def __init__(self, logger: Logger) -> None:

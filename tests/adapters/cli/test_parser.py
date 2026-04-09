@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import pytest
@@ -75,3 +76,20 @@ def test_parse_invoices_arguments_with_download_dir() -> None:
 def test_parse_arguments_requires_command() -> None:
     with pytest.raises(SystemExit):
         parse_arguments([])
+
+
+def test_parse_arguments_raises_for_unsupported_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeParser:
+        def parse_args(self, argv: list[str] | None = None) -> argparse.Namespace:
+            return argparse.Namespace(
+                command="unknown",
+                base_url="https://api.ksef.mf.gov.pl/v2",
+                timeout=30.0,
+                debug=False,
+                env_file=Path(".env"),
+            )
+
+    monkeypatch.setattr("ksef_link.adapters.cli.parser.build_parser", lambda: FakeParser())
+
+    with pytest.raises(ValueError, match="Unsupported command: unknown"):
+        parse_arguments(["unknown"])
