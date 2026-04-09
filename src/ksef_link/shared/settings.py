@@ -22,11 +22,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
         return {}
 
     loaded_values = dotenv_values(path)
-    return {
-        key: value
-        for key, value in loaded_values.items()
-        if value is not None
-    }
+    return {key: value for key, value in loaded_values.items() if value is not None}
 
 
 def load_environment(env_file: Path, environment: Mapping[str, str] | None = None) -> dict[str, str]:

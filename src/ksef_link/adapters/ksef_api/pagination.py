@@ -68,9 +68,7 @@ class InvoiceMetadataPaginator:
                 invoices.append(invoice)
 
             if page.is_truncated and not page.has_more:
-                raise KsefApiError(
-                    "KSeF zwrócił niejednoznaczne flagi paginacji: hasMore=false oraz isTruncated=true."
-                )
+                raise KsefApiError("KSeF zwrócił niejednoznaczne flagi paginacji: hasMore=false oraz isTruncated=true.")
 
             if not page.has_more:
                 return InvoiceQueryResult(
@@ -110,9 +108,7 @@ class InvoiceMetadataPaginator:
 
         next_from = response_invoices[-1][_invoice_date_field_name(date_type)]
         if next_from == self._filters["dateRange"]["from"]:
-            raise KsefApiError(
-                "KSeF zwrócił isTruncated=true, ale nie pozwala zawęzić zakresu dateRange.from."
-            )
+            raise KsefApiError("KSeF zwrócił isTruncated=true, ale nie pozwala zawęzić zakresu dateRange.from.")
 
         self._filters["dateRange"]["from"] = next_from
 

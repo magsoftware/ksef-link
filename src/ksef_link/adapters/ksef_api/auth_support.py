@@ -48,9 +48,7 @@ class CertificateSelector:
         """
         current_time = now or datetime.now(UTC)
         matching_certificates = [
-            certificate
-            for certificate in certificates
-            if KSEF_TOKEN_ENCRYPTION_USAGE in certificate.usage
+            certificate for certificate in certificates if KSEF_TOKEN_ENCRYPTION_USAGE in certificate.usage
         ]
         if not matching_certificates:
             raise KsefApiError("KSeF nie zwrócił certyfikatu z usage=KsefTokenEncryption.")

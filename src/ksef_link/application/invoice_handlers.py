@@ -143,9 +143,7 @@ def build_invoice_filters(command: InvoicesCommandOptions, now: datetime | None 
         "dateType": command.date_type,
         "from": command.date_from or date_from,
         "to": command.date_to or date_to,
-        "restrictToPermanentStorageHwmDate": (
-            command.date_type == "PermanentStorage" and command.restrict_to_hwm
-        ),
+        "restrictToPermanentStorageHwmDate": (command.date_type == "PermanentStorage" and command.restrict_to_hwm),
     }
     filters: InvoiceQueryFilters = {
         "subjectType": command.subject_type,

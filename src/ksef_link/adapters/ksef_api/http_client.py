@@ -158,9 +158,8 @@ class KsefHttpClient:
 
             self._log_response(response)
 
-            if (
-                response.status_code in RETRYABLE_STATUS_CODES
-                and self._should_retry_request(method=method, path=path, attempt=attempt)
+            if response.status_code in RETRYABLE_STATUS_CODES and self._should_retry_request(
+                method=method, path=path, attempt=attempt
             ):
                 delay = self._retry_delay_seconds(
                     attempt=attempt,
@@ -268,9 +267,8 @@ class KsefHttpClient:
                         json.dumps(_redact_headers(dict(response.headers.items())), ensure_ascii=False),
                     )
 
-                    if (
-                        response.status_code in RETRYABLE_STATUS_CODES
-                        and self._should_retry_request(method=method, path=path, attempt=attempt)
+                    if response.status_code in RETRYABLE_STATUS_CODES and self._should_retry_request(
+                        method=method, path=path, attempt=attempt
                     ):
                         delay = self._retry_delay_seconds(
                             attempt=attempt,
@@ -384,10 +382,7 @@ class KsefHttpClient:
         if isinstance(body, dict):
             error_code = body.get("exceptionCode") or body.get("code") or body.get("status")
             description = (
-                body.get("exceptionDescription")
-                or body.get("title")
-                or body.get("message")
-                or "Błąd API KSeF"
+                body.get("exceptionDescription") or body.get("title") or body.get("message") or "Błąd API KSeF"
             )
             details = body.get("details") or body.get("detail") or body.get("errors")
             raise KsefApiError(
@@ -502,10 +497,7 @@ def _redact_json_value(value: Any, key: str | None = None) -> Any:
     if key is not None and key.lower() in SENSITIVE_KEYS:
         return REDACTED
     if isinstance(value, dict):
-        return {
-            nested_key: _redact_json_value(nested_value, nested_key)
-            for nested_key, nested_value in value.items()
-        }
+        return {nested_key: _redact_json_value(nested_value, nested_key) for nested_key, nested_value in value.items()}
     if isinstance(value, list):
         return [_redact_json_value(item) for item in value]
     return value
