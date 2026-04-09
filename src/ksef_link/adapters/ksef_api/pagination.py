@@ -96,7 +96,11 @@ class InvoiceMetadataPaginator:
         Raises:
             KsefApiError: If the page cannot be converted into a narrower range.
         """
-        date_type = self._filters["dateRange"]["dateType"]
+        date_range = self._filters.get("dateRange")
+        if date_range is None:
+            raise KsefApiError("Brak dateRange w filtrach zapytania do paginacji.")
+
+        date_type = date_range["dateType"]
         if self._sort_order != "Asc":
             raise KsefApiError("Automatyczna obsługa isTruncated działa tylko dla sortowania Asc.")
         if date_type != "PermanentStorage":
@@ -107,10 +111,10 @@ class InvoiceMetadataPaginator:
             raise KsefApiError("KSeF zwrócił isTruncated=true bez żadnych faktur na stronie wyników.")
 
         next_from = response_invoices[-1][_invoice_date_field_name(date_type)]
-        if next_from == self._filters["dateRange"]["from"]:
+        if next_from == date_range["from"]:
             raise KsefApiError("KSeF zwrócił isTruncated=true, ale nie pozwala zawęzić zakresu dateRange.from.")
 
-        self._filters["dateRange"]["from"] = next_from
+        date_range["from"] = next_from
 
 
 def _invoice_date_field_name(date_type: str) -> str:

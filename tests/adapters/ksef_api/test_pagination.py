@@ -153,6 +153,18 @@ def test_advance_truncated_date_range_validation_errors() -> None:
             sort_order="Asc",
         )._advance_truncated_date_range(response_invoices=[{"permanentStorageDate": "same"}])
 
+    with pytest.raises(KsefApiError, match="Brak dateRange"):
+        InvoiceMetadataPaginator(
+            fetch_page=lambda filters, page_offset: InvoiceMetadataPage(
+                has_more=False,
+                is_truncated=False,
+                permanent_storage_hwm_date=None,
+                invoices=[],
+            ),
+            filters={"subjectType": "Subject2"},
+            sort_order="Asc",
+        )._advance_truncated_date_range(response_invoices=[{"permanentStorageDate": "b"}])
+
 
 def test_invoice_date_field_name_supports_all_variants() -> None:
     assert _invoice_date_field_name("Issue") == "issueDate"
